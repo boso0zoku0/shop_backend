@@ -1,0 +1,38 @@
+[project]
+name = "shop"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13.2"
+
+dependencies = [
+    "fastapi[standard]>=0.128.0",
+    "jinja2>=3.1.6",
+    "redis[hiredis]>=5.2.1",
+    "typer>=0.15.2",
+    "pydantic-settings[yaml]>=2.10.1",
+    "python-multipart>=0.0.20",
+    "sqlalchemy>=2.0.44",
+    "asyncpg>=0.30.0",
+    "yookassa>=3.9.0",
+    "var-dump>=1.2",
+    "yookassa-payout>=2.7.0",
+    "yoomoney>=0.1.2",
+    "aio-pika>=9.5.8",
+    "requests>=2.32.5",
+    "pyjwt[crypto]>=2.10.1",
+    "bcrypt>=5.0.0",
+    "fastapi-cache2[dynamodb,memcache]>=0.2.2",
+]
+
+[dependency-groups]
+dev = [
+    "alembic>=1.17.0",
+    "coverage>=7.10.1",
+    "httpx>=0.28.1",
+    "mypy>=1.17.0",
+    "pre-commit>=4.2.0",
+    "pytest>=8.4.1",
+    "pytest-cov>=6.2.1",
+    "ruff>=0.11.5",
+]
