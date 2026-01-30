@@ -45,9 +45,8 @@ async def login(
     username: str = Form(),
     password: str = Form(),
 ):
-    stmt = select(Users).where(Users.username == username)
-    result = await session.execute(stmt)
-    user = result.scalars().first()
+    user = await session.scalar(select(Users).where(Users.username == username))
+
     if not user:
         return False
     hashed_pwd = helper.hash_password(password)

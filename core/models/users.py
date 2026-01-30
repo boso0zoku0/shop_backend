@@ -1,18 +1,15 @@
-from sqlalchemy import func, LargeBinary, false, JSON
+from sqlalchemy import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.config import Base
 from sqlalchemy.dialects.postgresql import TIMESTAMP
-
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy import (
-    Text,
-    Identity,
-    create_engine,
-    CheckConstraint,
     func,
     text,
-    BigInteger,
 )
+
+from core.schemas.privilege_level import PrivilegeLevel
 
 
 class Users(Base):
@@ -36,7 +33,19 @@ class Users(Base):
         server_default=text("false"),
         nullable=False,
     )
-
+    privilege: Mapped[PrivilegeLevel] = mapped_column(
+        SQLEnum(PrivilegeLevel, name="privilege_level"),
+        nullable=True,
+        name="privilege_level",
+    )
+    cookie_privileged: Mapped[TIMESTAMP] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
+    cookie_privileged_expires: Mapped[TIMESTAMP] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
     favorite_genre: Mapped[dict] = mapped_column(
         JSON, nullable=True, default=lambda: {"action": 0, "rpg": 0, "strategy": 0}
     )

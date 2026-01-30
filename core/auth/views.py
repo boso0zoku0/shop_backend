@@ -29,7 +29,7 @@ async def register_user(
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
     cookie = str(generate_session_id())
-    response.set_cookie(key="session_id", value=cookie, max_age=300)
+    response.set_cookie(key="session_id", value=cookie, max_age=10000)
     await add_user(session=session, username=username, password=password)
     await session.execute(
         update(Users).where(Users.username == username).values(cookie=cookie)
@@ -40,7 +40,6 @@ async def register_user(
 
 @router.post("/login")
 async def user_login(
-    request: Request,
     response: Response,
     username: str = Form(),
     password: str = Form(),
@@ -50,7 +49,7 @@ async def user_login(
     if response_validate:
 
         cookie_update = generate_session_id()
-        response.set_cookie(key="session_id", value=cookie_update, max_age=300)
+        response.set_cookie(key="session_id", value=cookie_update, max_age=10000)
         await session.execute(
             update(Users)
             .where(Users.username == username)

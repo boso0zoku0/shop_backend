@@ -23,6 +23,7 @@ dependencies = [
     "pyjwt[crypto]>=2.10.1",
     "bcrypt>=5.0.0",
     "fastapi-cache2[dynamodb,memcache]>=0.2.2",
+    "faststream[rabbit]>=0.6.5",
 ]
 
 [dependency-groups]

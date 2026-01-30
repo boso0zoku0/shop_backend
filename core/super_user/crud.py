@@ -45,7 +45,7 @@ async def get_super_user(
 ):
     current_user = await get_user_by_cookie(request=request, session=session)
 
-    if current_user.is_superuser:
+    if current_user.is_superuser or current_user.privilege.value == "best":
         return True
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED, detail="Entry is prohibited."

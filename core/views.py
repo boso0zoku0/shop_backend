@@ -1,6 +1,6 @@
 from typing import Literal, Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, status, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 from core import db_helper
@@ -19,8 +19,10 @@ from core.crud import (
     get_liked_games,
     user_interactions,
     get_games_preferred,
+    create_privilege_level,
 )
 from core.schemas import GamesBase
+from core.schemas.privilege_level import PrivilegeLevel
 
 router = APIRouter(
     prefix="/games",
@@ -151,3 +153,16 @@ async def preferred_games(
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
     return await get_games_preferred(session=session, request=request)
+
+
+@router.post(
+    "/payment",
+)
+async def payment_create(
+    privilege: PrivilegeLevel,
+    request: Request,
+    response: Response,
+    session: AsyncSession = Depends(db_helper.session_dependency),
+):
+    response.set_cookie(key="payment", value=privilege.value, max_age=10000)
+    await create_privilege_level(privilege=privilege, session=session, request=request)

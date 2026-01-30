@@ -1,16 +1,9 @@
 import logging
-from collections import defaultdict
-from datetime import datetime, timezone
-from typing import Annotated, Optional, Dict, Set
 
-from fastapi import WebSocket, WebSocketDisconnect, WebSocketException, Depends
-from sqlalchemy import select, update, insert
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocket
 
-from core import db_helper
-from core.models.ws_connections import WebsocketConnections
+from core.rabbit.config import RabbitConfig
 from core.websockets.crud import insert_websocket_db
 
 log = logging.getLogger(__name__)
@@ -32,7 +25,7 @@ class WebsocketManager:
         self.operators: dict[str, WebSocket] = {}
         self.clients: dict[str, WebSocket] = {}
 
-    async def connect_client(
+    async def connect_client(  # client_skill
         self,
         websocket: WebSocket,
         client_id: str,
@@ -53,7 +46,7 @@ class WebsocketManager:
             connection_type="client",
         )
 
-    async def connect_operator(
+    async def connect_operator(  # operator_skill
         self,
         websocket: WebSocket,
         operator_id: str,
@@ -74,7 +67,7 @@ class WebsocketManager:
             connection_type="operator",
         )
 
-    async def send_to_operator(
+    async def send_to_operator(  # client_skill
         self,
         client_id: str,
         message: str,
@@ -88,7 +81,7 @@ class WebsocketManager:
                 }
             )
 
-    async def send_to_clients(
+    async def send_to_client(  # operator_skill
         self,
         client_id: str,
         message: str,
@@ -106,7 +99,7 @@ class WebsocketManager:
                 f"Operator responded to the client: {client_id} message: {message}"
             )
 
-    async def broadcast_to_operators(
+    async def broadcast_to_operators(  # client_skill
         self,
         message: str,
         client: str,
@@ -120,7 +113,7 @@ class WebsocketManager:
                 }
             )
 
-    async def broadcast_to_clients(
+    async def broadcast_to_clients(  # operator_skill
         self,
         message: str,
         operator: str,

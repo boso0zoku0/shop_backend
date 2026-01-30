@@ -18,6 +18,7 @@ from sqlalchemy import (
     cast,
     Date,
     union_all,
+    text,
 )
 from sqlalchemy.exc import NoResultFound, IntegrityError
 
@@ -34,6 +35,7 @@ from core.models import (
     GamesUserRatings,
 )
 from core.schemas import GamesBase
+from core.schemas.privilege_level import PrivilegeLevel
 
 
 class SortDate(enum.Enum):
@@ -547,3 +549,30 @@ async def genres_preference_algorithm(
         )
         for game in all_games
     ]
+
+
+async def create_privilege_level(
+    privilege: PrivilegeLevel,
+    request: Request,
+    session: AsyncSession = Depends(db_helper.session_dependency),
+):
+    user = await get_user_by_cookie(session, request)
+    expire_cookie: int = 0
+    if privilege.value == "weak":
+        expire_cookie = 20
+    if privilege.value == "medium":
+        expire_cookie = 2000
+    if privilege.value == "best":
+        expire_cookie = 10000
+    await session.execute(
+        update(Users)
+        .where(Users.username == user.username)
+        .values(
+            privilege=privilege,
+            cookie_privileged=func.now(),
+            cookie_privileged_expires=text(
+                f"TIMEZONE('utc', now()) + interval '{expire_cookie} minutes'"
+            ),
+        )
+    )
+    await session.commit()
