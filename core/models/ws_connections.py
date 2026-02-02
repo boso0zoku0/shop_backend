@@ -18,12 +18,18 @@ from sqlalchemy import (
     BigInteger,
 )
 
+from core.models import Users
+
 
 class WebsocketConnections(Base):
     id: Mapped[int] = mapped_column(
         BigInteger,
         Identity(always=True),
         primary_key=True,
+    )
+    user_id = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
     )
     username: Mapped[str] = mapped_column(
         Text,
@@ -37,7 +43,7 @@ class WebsocketConnections(Base):
     connected_at: Mapped[TIMESTAMP] = mapped_column(
         TIMESTAMP(timezone=True),
         server_default=func.now(),
-        nullable=False,
+        nullable=True,
     )
     disconnected_at: Mapped[TIMESTAMP] = mapped_column(
         TIMESTAMP(timezone=True),
@@ -49,7 +55,7 @@ class WebsocketConnections(Base):
     )
     user_agent: Mapped[str] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(
-        default=False,
+        default=None,
         server_default=text("false"),
-        nullable=False,
+        nullable=None,
     )

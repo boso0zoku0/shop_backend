@@ -35,7 +35,7 @@ async def register_user(
         update(Users).where(Users.username == username).values(cookie=cookie)
     )
     await session.commit()
-    return {"username": username, "password": password}
+    return {"username": username, "password": password, "cookie_session_id": cookie}
 
 
 @router.post("/login")
@@ -58,12 +58,21 @@ async def user_login(
             )
         )
         await session.commit()
-        return {f"Login successful {username}"}
+        return {"username": username, "cookie_update_session_id": cookie_update}
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Incorrect username or password",
     )
+
+
+@router.get("/user-by-cookie", status_code=status.HTTP_200_OK)
+async def cookie_read(
+    request: Request, session: AsyncSession = Depends(db_helper.session_dependency)
+):
+    user_by_cookie = await get_user_by_cookie(request=request, session=session)
+
+    return user_by_cookie
 
 
 @router.delete("/logout", status_code=status.HTTP_200_OK)
@@ -78,15 +87,6 @@ async def logout(
     await session.commit()
     response.delete_cookie(key="session_id")
     return "Buy"
-
-
-@router.get("/cookie", status_code=status.HTTP_200_OK)
-async def cookie_read(
-    request: Request, session: AsyncSession = Depends(db_helper.session_dependency)
-):
-    user_by_cookie = await get_user_by_cookie(request=request, session=session)
-
-    return user_by_cookie.cookie
 
 
 @router.get("/users/statistics", status_code=status.HTTP_200_OK)

@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
@@ -11,9 +12,20 @@ from core.auth.views import router as auth_router
 from core.config import settings
 from core.frontend_db.views import router
 
-from core.websockets import ws_router
+from core.websockets.endpoints import router as ws_router
+from core.websockets.helper import broker
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app):
+    await broker.start()
+    yield
+    await broker.stop()
+
+
+app = FastAPI(lifespan=lifespan)
+
+
 app.include_router(games_router)
 app.include_router(super_user_games_router)
 
@@ -30,11 +42,11 @@ logging.basicConfig(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins="http://localhost:5173/",
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],  # Разрешаем все методы
     allow_headers=["*"],  # Разрешаем все заголовки
 )
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)

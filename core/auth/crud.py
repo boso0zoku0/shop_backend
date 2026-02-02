@@ -12,6 +12,7 @@ from starlette import status
 from core import db_helper
 from core.models import Users
 from core.auth import helper
+from core.models.ws_connections import WebsocketConnections
 
 
 async def get_user_by_cookie(session: AsyncSession, request: Request):
@@ -76,13 +77,15 @@ async def add_user(
         result = await session.execute(stmt)
         result.scalar()
         hash_password = helper.hash_password(password=password)
-        payload = {"username": username, "password": password}
-        access_token = helper.encode_jwt(payload=payload)
+        access_token = helper.encode_jwt(
+            payload={"username": username, "password": password}
+        )
         stmt = insert(Users).values(
             username=username,
             password=str(hash_password),
             access_token=access_token,
         )
+
         await session.execute(stmt)
         await session.commit()
 
