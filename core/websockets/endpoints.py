@@ -26,7 +26,9 @@ router = APIRouter()
 
 
 exchange = RabbitExchange("exchange_chat")
+queue_clients_greeting = RabbitQueue("greeting_with_clients")
 queue_clients = RabbitQueue("from_clients")
+queue_notifying_client_operator = RabbitQueue("notifying_client_operator_connection")
 queue_operators = RabbitQueue("from_operators")
 
 
@@ -46,6 +48,11 @@ async def operator_ws(
         ip_address=websocket.client.host if websocket.client else "0.0.0.0",
         user_agent="console",
         is_active=True,
+    )
+    await broker.publish(
+        {"client": client, "operator": operator},
+        queue=queue_notifying_client_operator,
+        exchange=exchange,
     )
 
     try:
@@ -99,6 +106,9 @@ async def clients_ws(
         ip_address=websocket.client.host if websocket.client else "0.0.0.0",
         user_agent="console",
         is_active=True,
+    )
+    await broker.publish(
+        {"client": client}, queue=queue_clients_greeting, exchange=exchange
     )
     try:
         while True:

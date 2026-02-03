@@ -62,6 +62,15 @@ class WebsocketManager:
         )
         log.info(f"✓ Оператор {operator} подключен")
 
+    async def greeting_with_client(
+        self,
+        client: str,
+    ):
+        await self.clients[client].send_text(f"Hello, {client}, how can I help you?")
+
+    async def notifying_client(self, client: str, operator: str):
+        await self.clients[client].send_text(f"Operator {operator} joined the chat")
+
     async def send_to_operator(self, client: str, message: str):
         """Отправка сообщения оператору"""
         if not self.operators:
@@ -127,8 +136,24 @@ broker = RabbitBroker("amqp://guest:guest@localhost:5672/")
 app = FastStream(broker)
 
 exchange = RabbitExchange("exchange_chat")
+queue_clients_greeting = RabbitQueue("greeting_with_clients")
+queue_notifying_client_operator = RabbitQueue("notifying_client_operator_connection")
 queue_clients = RabbitQueue("from_clients")
 queue_operators = RabbitQueue("from_operators")
+
+
+@broker.subscriber(queue=queue_clients_greeting, exchange=exchange)
+async def handler_greeting_with_clients(
+    msg: dict,
+):
+
+    await manager.greeting_with_client(msg["client"])
+
+
+@broker.subscriber(queue=queue_notifying_client_operator, exchange=exchange)
+async def handler_notifying_client_operator_connection(msg: dict):
+
+    await manager.notifying_client(client=msg["client"], operator=msg["operator"])
 
 
 @broker.subscriber(queue=queue_clients, exchange=exchange)
