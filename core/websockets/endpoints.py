@@ -30,18 +30,18 @@ queue_clients = RabbitQueue("from_clients")
 queue_operators = RabbitQueue("from_operators")
 
 
-@router.websocket("/operator/{operator_id}/{client_id}")
+@router.websocket("/operator/{operator}/{client}")
 async def operator_ws(
     websocket: WebSocket,
-    operator_id: str,
-    client_id: str,
+    operator: str,
+    client: str,
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
     await websocket.accept()
     await manager.connect_operator(
         session=session,
         websocket=websocket,
-        operator_id=operator_id,
+        operator=operator,
         user_id=77,
         ip_address=websocket.client.host if websocket.client else "0.0.0.0",
         user_agent="console",
@@ -55,7 +55,7 @@ async def operator_ws(
             log.info(f"Оператор отправил: {data}")
 
             await broker.publish(
-                message={"client_id": client_id, "message": data},
+                message={"client": client, "message": data},
                 queue=queue_operators,
                 exchange=exchange,
             )
@@ -66,23 +66,23 @@ async def operator_ws(
             #     )
 
     except WebSocketDisconnect:
-        if operator_id in manager.operators:
+        if operator in manager.operators:
             await session.execute(
                 update(WebsocketsConnections)
-                .where(WebsocketsConnections.username == operator_id)
+                .where(WebsocketsConnections.username == operator)
                 .values(is_active=False, disconnected_at=datetime.now(tz=timezone.utc))
             )
             await session.commit()
-            del manager.operators[operator_id]
+            del manager.operators[operator]
         log.info("✗ Оператор отключился")
     except Exception as e:
         log.info(f"Ошибка: {e}")
 
 
-@router.websocket("/clients/{client_id}")
+@router.websocket("/clients/{client}")
 async def clients_ws(
     websocket: WebSocket,
-    client_id: str,
+    client: str,
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
     await websocket.accept()
@@ -95,18 +95,18 @@ async def clients_ws(
         session=session,
         websocket=websocket,
         user_id=78,
-        client_id=client_id,
+        client=client,
         ip_address=websocket.client.host if websocket.client else "0.0.0.0",
         user_agent="console",
         is_active=True,
     )
     try:
         while True:
-            log.info(f"Клиент {client_id} подключился")
+            log.info(f"Клиент {client} подключился")
             data = await websocket.receive_text()
 
             await broker.publish(
-                message={"client_id": client_id, "message": data},
+                message={"client": client, "message": data},
                 queue=queue_clients,
                 exchange=exchange,
             )
@@ -116,11 +116,11 @@ async def clients_ws(
     except WebSocketDisconnect:
         await session.execute(
             update(WebsocketsConnections)
-            .where(WebsocketsConnections.username == client_id)
+            .where(WebsocketsConnections.username == client)
             .values(is_active=False, disconnected_at=datetime.now(tz=timezone.utc))
         )
         await session.commit()
-        del manager.clients[client_id]
+        del manager.clients[client]
 
 
 #

@@ -21,18 +21,18 @@ class WebsocketManager:
     async def connect_client(
         self,
         websocket: WebSocket,
-        client_id: str,
+        client: str,
         ip_address: str,
         user_agent: str,
         is_active: bool,
         user_id: int,
         session: AsyncSession,
     ):
-        self.clients[client_id] = websocket
+        self.clients[client] = websocket
         # await self.notify_operator_client_connected(client_id)
         await insert_websocket_db(
             session=session,
-            username=client_id,
+            username=client,
             user_id=user_id,
             ip_address=ip_address,
             user_agent=user_agent,
@@ -43,26 +43,26 @@ class WebsocketManager:
     async def connect_operator(
         self,
         websocket: WebSocket,
-        operator_id: str,
+        operator: str,
         user_id: int,
         ip_address: str,
         user_agent: str,
         is_active: bool,
         session: AsyncSession,
     ):
-        self.operators[operator_id] = websocket
+        self.operators[operator] = websocket
         await insert_websocket_db(
             session=session,
-            username=operator_id,
+            username=operator,
             user_id=user_id,
             ip_address=ip_address,
             user_agent=user_agent,
             is_active=is_active,
             connection_type="operator",
         )
-        log.info(f"✓ Оператор {operator_id} подключен")
+        log.info(f"✓ Оператор {operator} подключен")
 
-    async def send_to_operator(self, client_id: str, message: str):
+    async def send_to_operator(self, client: str, message: str):
         """Отправка сообщения оператору"""
         if not self.operators:
             log.info("✗ Нет подключенных операторов")
@@ -74,22 +74,22 @@ class WebsocketManager:
                     {
                         "type": "client_message",
                         # "action": "connected",
-                        "client_id": client_id,
+                        "client_id": client,
                         "message": message,
                         "timestamp": datetime.now().isoformat(),
                     }
                 )
                 log.info(
-                    f"✓ Сообщение от {client_id} отправлено оператору {operator_id}: {message}"
+                    f"✓ Сообщение от {client} отправлено оператору {operator_id}: {message}"
                 )
             except Exception as e:
                 log.info(f"✗ Ошибка отправки оператору {operator_id}: {e}")
 
-    async def send_to_client(self, client_id: str, message: str | dict):
+    async def send_to_client(self, client: str, message: str | dict):
         """Отправка сообщения клиенту"""
-        if client_id in self.clients:
+        if client in self.clients:
             try:
-                await self.clients[client_id].send_json(
+                await self.clients[client].send_json(
                     {
                         "type": "operator_message",
                         # "action": "connected",
@@ -98,21 +98,21 @@ class WebsocketManager:
                     }
                 )
                 log.info(
-                    f"✓ Сообщение оператора отправлено клиенту {client_id}: {message}"
+                    f"✓ Сообщение оператора отправлено клиенту {client}: {message}"
                 )
             except Exception as e:
-                log.info(f"✗ Ошибка отправки клиенту {client_id}: {e}")
+                log.info(f"✗ Ошибка отправки клиенту {client}: {e}")
         else:
-            log.info(f"✗ Клиент {client_id} не найден")
+            log.info(f"✗ Клиент {client} не найден")
 
-    async def notify_operator_client_connected(self, client_id: str):
+    async def notify_operator_client_connected(self, client: str):
         """Уведомление оператора о новом подключении клиента"""
         for operator_id, operator_ws in self.operators.items():
             try:
                 await operator_ws.send_json(
                     {
                         "type": "notify_to_connection",
-                        "client_id": client_id,
+                        "client_id": client,
                         "timestamp": datetime.now().isoformat(),
                     }
                 )
@@ -141,7 +141,7 @@ async def handler_from_client_to_operator(
     #     client_id = data.get("client_id")
     #     message = data.get("message")
 
-    await manager.send_to_operator(client_id=msg["client_id"], message=msg["message"])
+    await manager.send_to_operator(client=msg["client"], message=msg["message"])
 
 
 # return
@@ -155,7 +155,7 @@ async def handler_from_operator_to_client(msg: bytes | str | dict):
     #     client_id = data.get("client_id")
     #     message = data.get("message")
 
-    await manager.send_to_client(client_id=msg["client_id"], message=msg["message"])
+    await manager.send_to_client(client=msg["client"], message=msg["message"])
 
 
 # return
