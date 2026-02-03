@@ -5,6 +5,7 @@ from fastapi import (
     WebSocketDisconnect,
     Depends,
     WebSocketException,
+    Query,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update
@@ -29,10 +30,11 @@ queue_clients = RabbitQueue("from_clients")
 queue_operators = RabbitQueue("from_operators")
 
 
-@router.websocket("/operator/{operator_id}")
+@router.websocket("/operator/{operator_id}/{client_id}")
 async def operator_ws(
     websocket: WebSocket,
     operator_id: str,
+    client_id: str,
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
     await websocket.accept()
@@ -40,18 +42,23 @@ async def operator_ws(
         session=session,
         websocket=websocket,
         operator_id=operator_id,
+        user_id=77,
         ip_address=websocket.client.host if websocket.client else "0.0.0.0",
-        user_agent="none",
+        user_agent="console",
         is_active=True,
     )
 
     try:
         while True:
             # Ждем сообщения от оператора (для отправки клиенту)
-            data: dict = await websocket.receive_json()
+            data: str = await websocket.receive_text()
             log.info(f"Оператор отправил: {data}")
 
-            await broker.publish(message=data, queue=queue_operators, exchange=exchange)
+            await broker.publish(
+                message={"client_id": client_id, "message": data},
+                queue=queue_operators,
+                exchange=exchange,
+            )
 
             # if "client_id" in data and "message" in data:
             #     await manager.send_to_client(
@@ -87,7 +94,7 @@ async def clients_ws(
     await manager.connect_client(
         session=session,
         websocket=websocket,
-        user_id=5,
+        user_id=78,
         client_id=client_id,
         ip_address=websocket.client.host if websocket.client else "0.0.0.0",
         user_agent="console",
@@ -96,16 +103,12 @@ async def clients_ws(
     try:
         while True:
             log.info(f"Клиент {client_id} подключился")
-            data = await websocket.receive_json()
-            message = {
-                "type": data["type"],
-                "action": "connected",
-                "client_id": data["client_id"],
-                "message": data["message"],
-                "timestamp": data["timestamp"],
-            }
+            data = await websocket.receive_text()
+
             await broker.publish(
-                message=message, queue=queue_clients, exchange=exchange
+                message={"client_id": client_id, "message": data},
+                queue=queue_clients,
+                exchange=exchange,
             )
 
             # await manager.send_to_operator(client_id, data)

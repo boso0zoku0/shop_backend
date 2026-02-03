@@ -44,6 +44,7 @@ class WebsocketManager:
         self,
         websocket: WebSocket,
         operator_id: str,
+        user_id: int,
         ip_address: str,
         user_agent: str,
         is_active: bool,
@@ -53,7 +54,7 @@ class WebsocketManager:
         await insert_websocket_db(
             session=session,
             username=operator_id,
-            user_id=1,
+            user_id=user_id,
             ip_address=ip_address,
             user_agent=user_agent,
             is_active=is_active,
@@ -61,7 +62,7 @@ class WebsocketManager:
         )
         log.info(f"✓ Оператор {operator_id} подключен")
 
-    async def send_to_operator(self, client_id: str, message: str | dict):
+    async def send_to_operator(self, client_id: str, message: str):
         """Отправка сообщения оператору"""
         if not self.operators:
             log.info("✗ Нет подключенных операторов")
@@ -134,23 +135,27 @@ queue_operators = RabbitQueue("from_operators")
 async def handler_from_client_to_operator(
     msg: bytes | str | dict,
 ):
-    data = await parse(msg)
-    action = data.get("action")
-    if action == "connected":
-        client_id = data.get("client_id")
-        message = data.get("message")
+    # data = await parse(msg)
+    # action = data.get("action")
+    # if action == "connected":
+    #     client_id = data.get("client_id")
+    #     message = data.get("message")
 
-        await manager.send_to_operator(client_id=client_id, message=message)
-    return
+    await manager.send_to_operator(client_id=msg["client_id"], message=msg["message"])
+
+
+# return
 
 
 @broker.subscriber(queue=queue_operators, exchange=exchange)
 async def handler_from_operator_to_client(msg: bytes | str | dict):
-    data = await parse(msg)
-    action = data.get("action")
-    if action == "connected":
-        client_id = data.get("client_id")
-        message = data.get("message")
+    # data = await parse(msg)
+    # action = data.get("action")
+    # if action == "connected":
+    #     client_id = data.get("client_id")
+    #     message = data.get("message")
 
-        await manager.send_to_client(client_id=client_id, message=message)
-    return
+    await manager.send_to_client(client_id=msg["client_id"], message=msg["message"])
+
+
+# return

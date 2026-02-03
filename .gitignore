@@ -211,5 +211,4 @@ __marimo__/
 core/auth/certs/*
 #pyproject.toml/
 
-#.gitignore/
-#uv.lock/
+./offline_packages
