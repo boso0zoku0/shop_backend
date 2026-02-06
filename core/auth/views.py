@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Response, Form, Request, status, HTTPException
-from sqlalchemy import update
+from sqlalchemy import update, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -11,8 +11,9 @@ from core.auth.crud import (
     get_user_by_cookie,
     user_statistics,
     get_about_me,
+    advertising_offer_to_client,
 )
-from core.models import Users
+from core.models import Users, PendingMessages
 from core.super_user.crud import get_super_user
 
 router = APIRouter(
@@ -58,12 +59,7 @@ async def user_login(
             )
         )
         await session.commit()
-        return {"username": username, "cookie_update_session_id": cookie_update}
-
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Incorrect username or password",
-    )
+        return {f"Login successful {username}"}
 
 
 @router.get("/user-by-cookie", status_code=status.HTTP_200_OK)

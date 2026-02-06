@@ -1,13 +1,11 @@
-import json
 import logging
-from typing import Union
-from fastapi import Request
-from faststream import FastStream
-from faststream.rabbit import RabbitBroker, RabbitExchange, RabbitQueue
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.websockets import WebSocket, WebSocketDisconnect
-from core.websockets.crud import insert_websocket_db, parse
+
+from core.faststream.manager import broker, exchange, queue_notify_client
+from core.models import PendingMessages
+from core.websockets.crud import insert_websocket_db
 from datetime import datetime
 
 log = logging.getLogger(__name__)
@@ -27,18 +25,41 @@ class WebsocketManager:
         is_active: bool,
         user_id: int,
         session: AsyncSession,
+        is_advertising: bool = False,
     ):
-        self.clients[client] = websocket
-        # await self.notify_operator_client_connected(client_id)
-        await insert_websocket_db(
-            session=session,
-            username=client,
-            user_id=user_id,
-            ip_address=ip_address,
-            user_agent=user_agent,
-            is_active=is_active,
-            connection_type="client",
-        )
+        if not is_advertising:
+            self.clients[client] = websocket
+            await insert_websocket_db(
+                session=session,
+                username=client,
+                user_id=user_id,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                is_active=is_active,
+                connection_type="client",
+            )
+        else:
+            self.clients[client] = websocket
+            await insert_websocket_db(
+                session=session,
+                username=client,
+                user_id=user_id,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                is_active=is_active,
+                connection_type="client",
+            )
+            stmt = select(PendingMessages).where(PendingMessages.user_id == user_id)
+            res = await session.execute(stmt)
+            message = res.scalar_one_or_none()
+            if not message:
+                return
+            await broker.publish(
+                message={"client": client, "message": message.message},
+                queue=queue_notify_client,
+                exchange=exchange,
+            )
+            await session.delete(message)
 
     async def connect_operator(
         self,
@@ -62,10 +83,7 @@ class WebsocketManager:
         )
         log.info(f"✓ Оператор {operator} подключен")
 
-    async def greeting_with_client(
-        self,
-        client: str,
-    ):
+    async def greeting_with_client(self, client: str):
         await self.clients[client].send_text(f"Hello, {client}, how can I help you?")
 
     async def notifying_client(self, client: str, operator: str):
@@ -91,28 +109,19 @@ class WebsocketManager:
                 log.info(
                     f"✓ Сообщение от {client} отправлено оператору {operator_id}: {message}"
                 )
+                log.info(f"OP_ID:{operator_id} WS: {operator_ws}")
             except Exception as e:
                 log.info(f"✗ Ошибка отправки оператору {operator_id}: {e}")
 
-    async def send_to_client(self, client: str, message: str | dict):
+    async def send_to_client(self, client: str, message: str | dict, operator: str):
         """Отправка сообщения клиенту"""
-        if client in self.clients:
-            try:
-                await self.clients[client].send_json(
-                    {
-                        "type": "operator_message",
-                        # "action": "connected",
-                        "message": message,
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                )
-                log.info(
-                    f"✓ Сообщение оператора отправлено клиенту {client}: {message}"
-                )
-            except Exception as e:
-                log.info(f"✗ Ошибка отправки клиенту {client}: {e}")
-        else:
-            log.info(f"✗ Клиент {client} не найден")
+        try:
+            await self.clients[client].send_text(
+                message
+            )  # Сообщения от оператора клиенту теперь как строка, а не json
+            log.info(f"✓ Сообщение отправлено клиенту {client}: {message}")
+        except Exception as e:
+            log.info(f"✗ Ошибка отправки клиенту {client}: {e}")
 
     async def notify_operator_client_connected(self, client: str):
         """Уведомление оператора о новом подключении клиента"""
@@ -128,59 +137,8 @@ class WebsocketManager:
             except WebSocketDisconnect as e:
                 log.warning(e)
 
+    async def advertising_to_client(self, client: str, message: str):
+        await self.clients[client].send_text(message)
+
 
 manager = WebsocketManager()
-
-
-broker = RabbitBroker("amqp://guest:guest@localhost:5672/")
-app = FastStream(broker)
-
-exchange = RabbitExchange("exchange_chat")
-queue_clients_greeting = RabbitQueue("greeting_with_clients")
-queue_notifying_client_operator = RabbitQueue("notifying_client_operator_connection")
-queue_clients = RabbitQueue("from_clients")
-queue_operators = RabbitQueue("from_operators")
-
-
-@broker.subscriber(queue=queue_clients_greeting, exchange=exchange)
-async def handler_greeting_with_clients(
-    msg: dict,
-):
-
-    await manager.greeting_with_client(msg["client"])
-
-
-@broker.subscriber(queue=queue_notifying_client_operator, exchange=exchange)
-async def handler_notifying_client_operator_connection(msg: dict):
-
-    await manager.notifying_client(client=msg["client"], operator=msg["operator"])
-
-
-@broker.subscriber(queue=queue_clients, exchange=exchange)
-async def handler_from_client_to_operator(
-    msg: bytes | str | dict,
-):
-    # data = await parse(msg)
-    # action = data.get("action")
-    # if action == "connected":
-    #     client_id = data.get("client_id")
-    #     message = data.get("message")
-
-    await manager.send_to_operator(client=msg["client"], message=msg["message"])
-
-
-# return
-
-
-@broker.subscriber(queue=queue_operators, exchange=exchange)
-async def handler_from_operator_to_client(msg: bytes | str | dict):
-    # data = await parse(msg)
-    # action = data.get("action")
-    # if action == "connected":
-    #     client_id = data.get("client_id")
-    #     message = data.get("message")
-
-    await manager.send_to_client(client=msg["client"], message=msg["message"])
-
-
-# return

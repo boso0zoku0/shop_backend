@@ -13,7 +13,7 @@ from core.config import settings
 from core.frontend_db.views import router
 
 from core.websockets.endpoints import router as ws_router
-from core.websockets.helper import broker
+from core.faststream.manager import broker
 
 
 @asynccontextmanager

@@ -19,7 +19,7 @@ import logging
 from core.websockets.crud import get_user_from_cookies
 from faststream.rabbit import RabbitExchange, RabbitQueue
 
-from core.websockets.helper import broker
+from core.faststream.manager import broker
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -62,7 +62,7 @@ async def operator_ws(
             log.info(f"Оператор отправил: {data}")
 
             await broker.publish(
-                message={"client": client, "message": data},
+                message={"client": client, "operator": operator, "message": data},
                 queue=queue_operators,
                 exchange=exchange,
             )
@@ -93,7 +93,7 @@ async def clients_ws(
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
     await websocket.accept()
-    # user = await get_user_from_cookies(websocket, session)
+    user = await get_user_from_cookies(websocket, session)
     # if user is None:
     #     raise WebSocketException(code=1008)
     # headers = dict(websocket.scope.get("headers", []))
@@ -106,10 +106,12 @@ async def clients_ws(
         ip_address=websocket.client.host if websocket.client else "0.0.0.0",
         user_agent="console",
         is_active=True,
+        is_advertising=True,
     )
     await broker.publish(
         {"client": client}, queue=queue_clients_greeting, exchange=exchange
     )
+
     try:
         while True:
             log.info(f"Клиент {client} подключился")

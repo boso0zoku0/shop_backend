@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query, status, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 from core import db_helper
-from core.auth.crud import get_user_by_cookie, get_current_user
+from core.auth.crud import get_current_user
 from core.crud import (
     games_catalog,
     game_select_genre,
