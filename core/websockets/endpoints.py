@@ -1,35 +1,29 @@
-from contextlib import asynccontextmanager
 from fastapi import (
     APIRouter,
     WebSocket,
     WebSocketDisconnect,
     Depends,
     WebSocketException,
-    Query,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update
 from datetime import datetime, timezone
-
 from core import db_helper
 from core.models import WebsocketsConnections
 from core.websockets import manager
 import logging
-
 from core.websockets.crud import get_user_from_cookies
 from faststream.rabbit import RabbitExchange, RabbitQueue
-
-from core.faststream.manager import broker
+from core.faststream.broker import (
+    broker,
+    exchange,
+    queue_operators,
+    queue_clients,
+    queue_notify_client,
+)
 
 log = logging.getLogger(__name__)
 router = APIRouter()
-
-
-exchange = RabbitExchange("exchange_chat")
-queue_clients_greeting = RabbitQueue("greeting_with_clients")
-queue_clients = RabbitQueue("from_clients")
-queue_notifying_client_operator = RabbitQueue("notifying_client_operator_connection")
-queue_operators = RabbitQueue("from_operators")
 
 
 @router.websocket("/operator/{operator}/{client}")
@@ -40,19 +34,16 @@ async def operator_ws(
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
     await websocket.accept()
+    user = await get_user_from_cookies(websocket, session)
     await manager.connect_operator(
         session=session,
         websocket=websocket,
         operator=operator,
-        user_id=77,
-        ip_address=websocket.client.host if websocket.client else "0.0.0.0",
-        user_agent="console",
+        client=client,
+        user_id=user["id"],
+        ip_address=user["ip"],
+        user_agent=user["user_agent"],
         is_active=True,
-    )
-    await broker.publish(
-        {"client": client, "operator": operator},
-        queue=queue_notifying_client_operator,
-        exchange=exchange,
     )
 
     try:
@@ -94,22 +85,16 @@ async def clients_ws(
 ):
     await websocket.accept()
     user = await get_user_from_cookies(websocket, session)
-    # if user is None:
-    #     raise WebSocketException(code=1008)
-    # headers = dict(websocket.scope.get("headers", []))
-    # user_agent = headers.get(b"user-agent", b"").decode()
+
     await manager.connect_client(
         session=session,
         websocket=websocket,
-        user_id=78,
+        user_id=user["id"],
         client=client,
-        ip_address=websocket.client.host if websocket.client else "0.0.0.0",
-        user_agent="console",
+        ip_address=user["ip"],
+        user_agent=user["user_agent"],
         is_active=True,
         is_advertising=True,
-    )
-    await broker.publish(
-        {"client": client}, queue=queue_clients_greeting, exchange=exchange
     )
 
     try:

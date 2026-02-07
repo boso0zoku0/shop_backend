@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Response, Form, Request, status, HTTPException
-from sqlalchemy import update, insert
+from sqlalchemy import update, insert, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -14,7 +14,7 @@ from core.auth.crud import (
     advertising_offer_to_client,
 )
 from core.models import Users, PendingMessages
-from core.super_user.crud import get_super_user
+from core.models.ws_connections import WebsocketConnections
 
 router = APIRouter(
     prefix="/auth",
@@ -30,7 +30,7 @@ async def register_user(
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
     cookie = str(generate_session_id())
-    response.set_cookie(key="session_id", value=cookie, max_age=10000)
+    response.set_cookie(key="session_id", value=cookie, max_age=10000, path="/")
     await add_user(session=session, username=username, password=password)
     await session.execute(
         update(Users).where(Users.username == username).values(cookie=cookie)
@@ -50,7 +50,14 @@ async def user_login(
     if response_validate:
 
         cookie_update = generate_session_id()
-        response.set_cookie(key="session_id", value=cookie_update, max_age=10000)
+        response.set_cookie(
+            key="session_id",
+            value=cookie_update,
+            max_age=10000,
+            path="/",
+            samesite="lax",
+            secure=False,
+        )
         await session.execute(
             update(Users)
             .where(Users.username == username)
@@ -59,7 +66,9 @@ async def user_login(
             )
         )
         await session.commit()
-        return {f"Login successful {username}"}
+        return {"cookie_session_id": cookie_update}
+    else:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
 
 
 @router.get("/user-by-cookie", status_code=status.HTTP_200_OK)
@@ -69,6 +78,12 @@ async def cookie_read(
     user_by_cookie = await get_user_by_cookie(request=request, session=session)
 
     return user_by_cookie
+
+
+@router.delete("/del")
+async def delete_user(session: AsyncSession = Depends(db_helper.session_dependency)):
+    await session.execute(delete(PendingMessages))
+    await session.commit()
 
 
 @router.delete("/logout", status_code=status.HTTP_200_OK)

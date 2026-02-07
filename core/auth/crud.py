@@ -7,13 +7,11 @@ from sqlalchemy import select, insert, and_, func, update, text
 from sqlalchemy.exc import IntegrityError
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql.functions import count
 from starlette import status
 from core import db_helper
 from core.models import Users, PendingMessages
 from core.auth import helper
 from core.models.ws_connections import WebsocketConnections
-from core.faststream.manager import broker, exchange, queue_clients
 
 
 async def advertising_offer_to_client(
@@ -28,6 +26,7 @@ async def advertising_offer_to_client(
         select(
             func.count(WebsocketConnections.connected_at),
         )
+        .join(Users, WebsocketConnections.user_id == Users.id)
         .where(
             and_(
                 Users.username == client,
@@ -37,16 +36,9 @@ async def advertising_offer_to_client(
         .group_by(WebsocketConnections.username)
     )
     res = await session.scalar(stmt)
+    if res is None:
+        return False
     if res >= 3:
-        # await broker.publish(
-        #     message={
-        #         "client": client,
-        #         "type": "advertising_offer",
-        #         "message": "Subscribe to our newsletter to receive exclusive offers.",
-        #     },
-        #     queue=queue_clients,
-        #     exchange=exchange,
-        # )
         return True
     return False
 
@@ -65,7 +57,7 @@ async def get_user_by_cookie(session: AsyncSession, request: Request):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired"
         )
-    return user
+    return {"username": user.username, "user_id": user.id}
 
 
 async def get_current_user(
@@ -90,8 +82,10 @@ async def login(
         return False
     hashed_pwd = helper.hash_password(password)
     is_valid = helper.validate_password(password=password, hashed_password=hashed_pwd)
+    is_offer = await advertising_offer_to_client(session, username)
     if is_valid:
-        if await advertising_offer_to_client(session, username):
+
+        if is_offer:
             await session.execute(
                 update(Users)
                 .where(Users.username == username)
@@ -100,14 +94,13 @@ async def login(
                 )
             )
             pending_msg = PendingMessages(
-                user_id=78,
+                user_id=user.id,
                 message="Subscribe to our newsletter to receive exclusive offers.",
                 is_read=False,
             )
             session.add(pending_msg)
 
             await session.commit()
-            return True
         await session.execute(
             update(Users)
             .where(Users.username == username)
@@ -115,8 +108,10 @@ async def login(
                 cookie_expires=text("TIMEZONE('utc', now()) + interval '5 minutes'")
             )
         )
+        return True
 
-    return False
+    else:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
 
 
 async def add_user(

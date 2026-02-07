@@ -4,7 +4,7 @@ from typing import Optional
 from datetime import timedelta, timezone, datetime
 from sqlalchemy import insert, select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketException
 
 from core.models import Users
 from core.models.ws_connections import WebsocketConnections
@@ -31,12 +31,10 @@ async def insert_websocket_db(
     await session.commit()
 
 
-async def get_user_from_cookies(
-    websocket: WebSocket, session: AsyncSession
-) -> Optional[Users]:
+async def get_user_from_cookies(websocket: WebSocket, session: AsyncSession):
 
     headers = dict(websocket.scope.get("headers", []))
-    cookie_header = headers.get(b"session_id", b"").decode()
+    cookie_header = headers.get(b"cookie", b"").decode()
 
     cookies = {}
     for cookie in cookie_header.split(";"):
@@ -47,13 +45,22 @@ async def get_user_from_cookies(
     session_id = cookies.get("session_id")
 
     if not session_id:
-        return None
+        raise WebSocketException(code=1008)
+    headers = dict(websocket.scope.get("headers", []))
+    user_agent = headers.get(b"user-agent", b"").decode()
+    ip = websocket.client.host if websocket.client else "0.0.0.0"
 
     stmt = select(Users).where(Users.cookie == session_id)
     result = await session.execute(stmt)
     user = result.scalar_one_or_none()
 
-    return user  # ← User со ВСЕМИ данными (id, username, role...)
+    return {
+        "id": user.id,
+        "username": user.username,
+        "headers": headers,
+        "user_agent": user_agent,
+        "ip": ip,
+    }
 
 
 async def parse(msg):

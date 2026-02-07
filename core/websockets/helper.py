@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from core.faststream.manager import broker, exchange, queue_notify_client
+from core.faststream.broker import broker, exchange, queue_notify_client
 from core.models import PendingMessages
 from core.websockets.crud import insert_websocket_db
 from datetime import datetime
@@ -27,8 +27,12 @@ class WebsocketManager:
         session: AsyncSession,
         is_advertising: bool = False,
     ):
+        self.clients[client] = websocket
+        await self.clients[client].send_json(
+            {"type": "greeting", "message": f"Hello {client} how can I help you?"}
+        )
+
         if not is_advertising:
-            self.clients[client] = websocket
             await insert_websocket_db(
                 session=session,
                 username=client,
@@ -39,7 +43,6 @@ class WebsocketManager:
                 connection_type="client",
             )
         else:
-            self.clients[client] = websocket
             await insert_websocket_db(
                 session=session,
                 username=client,
@@ -49,13 +52,21 @@ class WebsocketManager:
                 is_active=is_active,
                 connection_type="client",
             )
-            stmt = select(PendingMessages).where(PendingMessages.user_id == user_id)
+            stmt = (
+                select(PendingMessages)
+                .where(PendingMessages.user_id == user_id)
+                .limit(1)
+            )
             res = await session.execute(stmt)
             message = res.scalar_one_or_none()
             if not message:
                 return
             await broker.publish(
-                message={"client": client, "message": message.message},
+                message={
+                    "type": "advertising",
+                    "client": client,
+                    "message": message.message,
+                },
                 queue=queue_notify_client,
                 exchange=exchange,
             )
@@ -65,6 +76,7 @@ class WebsocketManager:
         self,
         websocket: WebSocket,
         operator: str,
+        client: str,
         user_id: int,
         ip_address: str,
         user_agent: str,
@@ -81,13 +93,16 @@ class WebsocketManager:
             is_active=is_active,
             connection_type="operator",
         )
+        await self.clients[client].send_json(
+            {"type": "notify", "message": f"Operator {operator} joined the chat"}
+        )
+
         log.info(f"✓ Оператор {operator} подключен")
 
     async def greeting_with_client(self, client: str):
-        await self.clients[client].send_text(f"Hello, {client}, how can I help you?")
-
-    async def notifying_client(self, client: str, operator: str):
-        await self.clients[client].send_text(f"Operator {operator} joined the chat")
+        await self.clients[client].send_json(
+            {"type": "greeting", "message": f"Hello, {client}, how can I help you?"}
+        )
 
     async def send_to_operator(self, client: str, message: str):
         """Отправка сообщения оператору"""
@@ -113,32 +128,43 @@ class WebsocketManager:
             except Exception as e:
                 log.info(f"✗ Ошибка отправки оператору {operator_id}: {e}")
 
-    async def send_to_client(self, client: str, message: str | dict, operator: str):
+    async def send_to_client(self, client: str, operator: str, message: str):
         """Отправка сообщения клиенту"""
         try:
-            await self.clients[client].send_text(
-                message
-            )  # Сообщения от оператора клиенту теперь как строка, а не json
+            await self.clients[client].send_json(
+                {
+                    "type": "operator_message",
+                    "operator": operator,
+                    "client": client,
+                    "message": message,
+                }
+            )
             log.info(f"✓ Сообщение отправлено клиенту {client}: {message}")
         except Exception as e:
             log.info(f"✗ Ошибка отправки клиенту {client}: {e}")
 
-    async def notify_operator_client_connected(self, client: str):
-        """Уведомление оператора о новом подключении клиента"""
-        for operator_id, operator_ws in self.operators.items():
-            try:
-                await operator_ws.send_json(
-                    {
-                        "type": "notify_to_connection",
-                        "client_id": client,
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                )
-            except WebSocketDisconnect as e:
-                log.warning(e)
+    # async def notify_operator_client_connected(self, client: str) -> None:
+    #     """Уведомление оператора о новом подключении клиента"""
+    #     for operator_id, operator_ws in self.operators.items():
+    #         try:
+    #             await operator_ws.send_json(
+    #                 {
+    #                     "type": "notify_to_connection",
+    #                     "client_id": client,
+    #                     "timestamp": datetime.now().isoformat(),
+    #                 }
+    #             )
+    #         except WebSocketDisconnect as e:
+    #             log.warning(e)
 
     async def advertising_to_client(self, client: str, message: str):
-        await self.clients[client].send_text(message)
+        await self.clients[client].send_json(
+            {
+                "type": "advertising",
+                "client": client,
+                "message": message,
+            }
+        )
 
 
 manager = WebsocketManager()

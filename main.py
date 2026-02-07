@@ -13,7 +13,7 @@ from core.config import settings
 from core.frontend_db.views import router
 
 from core.websockets.endpoints import router as ws_router
-from core.faststream.manager import broker
+from core.faststream.handlers import broker
 
 
 @asynccontextmanager
@@ -42,7 +42,7 @@ logging.basicConfig(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],  # Разрешаем все методы
     allow_headers=["*"],  # Разрешаем все заголовки
