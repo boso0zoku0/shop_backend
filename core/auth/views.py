@@ -82,7 +82,7 @@ async def cookie_read(
 
 @router.delete("/del")
 async def delete_user(session: AsyncSession = Depends(db_helper.session_dependency)):
-    await session.execute(delete(PendingMessages))
+    await session.execute(delete(WebsocketConnections))
     await session.commit()
 
 

@@ -15,6 +15,14 @@ class WebsocketManager:
     def __init__(self):
         self.operators: dict[str, WebSocket] = {}
         self.clients: dict[str, WebSocket] = {}
+        self.connection_client_operator: dict[str, str] = {}  # client, operator
+
+    async def get_free_operator(self):
+        busy_operators = set(self.connection_client_operator.values())
+        for operator in self.operators.keys():
+            if operator not in busy_operators:
+                return operator
+        return None
 
     async def connect_client(
         self,
@@ -31,6 +39,10 @@ class WebsocketManager:
         await self.clients[client].send_json(
             {"type": "greeting", "message": f"Hello {client} how can I help you?"}
         )
+        free_operator = await self.get_free_operator()
+        if free_operator is None:
+            log.info("No free operator")
+        self.connection_client_operator[client] = free_operator
 
         if not is_advertising:
             await insert_websocket_db(
@@ -93,45 +105,46 @@ class WebsocketManager:
             is_active=is_active,
             connection_type="operator",
         )
-        await self.clients[client].send_json(
-            {"type": "notify", "message": f"Operator {operator} joined the chat"}
-        )
+        if client in self.clients:
+            await self.clients.get(client).send_json(
+                {"type": "notify", "message": f"Operator {operator} joined the chat"}
+            )
+            self.connection_client_operator[client] = operator
 
-        log.info(f"✓ Оператор {operator} подключен")
+            log.info(f"✓ Оператор {operator} подключен")
 
     async def greeting_with_client(self, client: str):
-        await self.clients[client].send_json(
+        await self.clients.get(client).send_json(
             {"type": "greeting", "message": f"Hello, {client}, how can I help you?"}
         )
 
     async def send_to_operator(self, client: str, message: str):
-        """Отправка сообщения оператору"""
-        if not self.operators:
-            log.info("✗ Нет подключенных операторов")
-            return
-
-        for operator_id, operator_ws in self.operators.items():
-            try:
-                await operator_ws.send_json(
-                    {
-                        "type": "client_message",
-                        # "action": "connected",
-                        "client_id": client,
-                        "message": message,
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                )
-                log.info(
-                    f"✓ Сообщение от {client} отправлено оператору {operator_id}: {message}"
-                )
-                log.info(f"OP_ID:{operator_id} WS: {operator_ws}")
-            except Exception as e:
-                log.info(f"✗ Ошибка отправки оператору {operator_id}: {e}")
+        operator = self.connection_client_operator.get(client)
+        if operator is None:
+            log.info("Нет оператора для клиента")
+        op_ws = self.operators.get(operator)
+        if op_ws is None:
+            log.info("Оператор не подключен")
+        try:
+            await self.operators.get(operator).send_json(
+                {
+                    "type": "client_message",
+                    "client": client,
+                    "operator": operator,
+                    "message": message,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
+        except Exception as e:
+            log.info(f"✗ Ошибка отправки {client} -> {operator}")
 
     async def send_to_client(self, client: str, operator: str, message: str):
         """Отправка сообщения клиенту"""
+        if self.connection_client_operator.get(client) != operator:
+            log.info("Отсутствует соединение")
+            return
         try:
-            await self.clients[client].send_json(
+            await self.clients.get(client).send_json(
                 {
                     "type": "operator_message",
                     "operator": operator,
@@ -141,7 +154,7 @@ class WebsocketManager:
             )
             log.info(f"✓ Сообщение отправлено клиенту {client}: {message}")
         except Exception as e:
-            log.info(f"✗ Ошибка отправки клиенту {client}: {e}")
+            log.info(f"✗ Ошибка отправки {operator} -> {client}")
 
     # async def notify_operator_client_connected(self, client: str) -> None:
     #     """Уведомление оператора о новом подключении клиента"""
@@ -158,7 +171,7 @@ class WebsocketManager:
     #             log.warning(e)
 
     async def advertising_to_client(self, client: str, message: str):
-        await self.clients[client].send_json(
+        await self.clients.get(client).send_json(
             {
                 "type": "advertising",
                 "client": client,

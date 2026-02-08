@@ -108,8 +108,6 @@ async def clients_ws(
                 exchange=exchange,
             )
 
-            # await manager.send_to_operator(client_id, data)
-
     except WebSocketDisconnect:
         await session.execute(
             update(WebsocketsConnections)
