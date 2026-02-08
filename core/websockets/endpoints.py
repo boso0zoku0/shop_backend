@@ -51,7 +51,9 @@ async def operator_ws(
             # Ждем сообщения от оператора (для отправки клиенту)
             data: str = await websocket.receive_text()
             log.info(f"Оператор отправил: {data}")
-
+            # client
+            # operator
+            # message
             await broker.publish(
                 message={"client": client, "operator": operator, "message": data},
                 queue=queue_operators,
