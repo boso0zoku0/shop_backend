@@ -1,9 +1,7 @@
 import enum
-from datetime import datetime, timezone
-from typing import Sequence, Literal
+from typing import Literal
 from urllib.parse import urlencode
 
-from certifi import where
 from fastapi import Depends, HTTPException, status, Request
 from fastapi import Query
 from sqlalchemy import (
@@ -15,15 +13,13 @@ from sqlalchemy import (
     Integer,
     insert,
     update,
-    cast,
-    Date,
     union_all,
-    text,
+    delete,
 )
 from sqlalchemy.exc import NoResultFound, IntegrityError
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import outerjoin
+from sqlalchemy.sql.functions import user
 from starlette.responses import RedirectResponse
 
 from core import db_helper
@@ -35,7 +31,6 @@ from core.models import (
     GamesUserRatings,
 )
 from core.schemas import GamesBase
-from core.schemas.privilege_level import PrivilegeLevel
 
 
 class SortDate(enum.Enum):
@@ -51,21 +46,16 @@ class GameRating(enum.Enum):
     FIVE = 5
 
 
-async def check_games(
-    session: AsyncSession = Depends(db_helper.session_dependency()),
-    future: bool = False,
-):
-    if not future:
-        stmt = select(Games).order_by(asc(Games.id))
-        res = await session.execute(stmt)
-        games = res.scalars().all()
-        return games
-    else:
-        pass
+async def check_games(session: AsyncSession = Depends(db_helper.session_dependency())):
+
+    stmt = select(Games)
+    res = await session.execute(stmt)
+    games = res.scalars().all()
+    return games
 
 
-async def check_game(
-    game: str, session: AsyncSession = Depends(db_helper.session_dependency())
+async def check_games_ratings(
+    game, session: AsyncSession = Depends(db_helper.session_dependency())
 ) -> Games | None:
     try:
         stmt = select(Games).where(Games.name == game)
@@ -123,6 +113,13 @@ async def game_select_genre(
     res = await session.execute(stmt)
     games = res.scalars().all()
     return games
+
+
+async def delete_games_user_liked(
+    session: AsyncSession = Depends(db_helper.session_dependency()),
+):
+    await session.execute(delete(GamesUserRatings))
+    await session.commit()
 
 
 async def create_favorite_game(
@@ -263,7 +260,7 @@ async def add_rating_for_game(
         user = await get_user_by_cookie(session, request)
 
         stmt_game_rating = insert(GamesUserRatings).values(
-            user_id=user.id,
+            user_id=user["user_id"],
             game=game,
             rating=rating,
         )
@@ -279,33 +276,81 @@ async def add_rating_for_game(
             )
 
 
-async def get_rating_for_games(
+async def check_games_ratings(
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
-    stmt_sub = (
-        select(
-            GamesUserRatings.game,
-            func.sum(GamesUserRatings.rating).label("total_ratings"),
-            func.count(GamesUserRatings.rating).label("rating_count"),
+    stmt = select(Games).order_by(asc(Games.id))
+    res = await session.execute(stmt)
+    games = res.scalars().all()
+    return games
+
+
+async def get_rating_for_games(
+    is_one_game: str | None = None,
+    session: AsyncSession = Depends(db_helper.session_dependency),
+    is_one: bool = False,
+):
+    if not is_one:
+        stmt_sub = (
+            select(
+                GamesUserRatings.game,
+                func.sum(GamesUserRatings.rating).label("total_ratings"),
+                func.count(GamesUserRatings.rating).label("rating_count"),
+            )
+            .group_by(GamesUserRatings.game)  # ← group_by НА select!
+            .subquery()
         )
-        .group_by(GamesUserRatings.game)  # ← group_by НА select!
-        .subquery()
-    )
+        stmt_games = select(Games).order_by(asc(Games.id))
+        res = await session.execute(stmt_games)
+        games = res.scalars().all()
 
-    stmt = select(
-        stmt_sub.c.game,
-        (stmt_sub.c.total_ratings / stmt_sub.c.rating_count).label("average_rating"),
-    ).order_by(desc(stmt_sub.c.total_ratings))
-    result = await session.execute(stmt)
-    data = result.all()
+        stmt = select(
+            stmt_sub.c.game,
+            (stmt_sub.c.total_ratings / stmt_sub.c.rating_count).label(
+                "average_rating"
+            ),
+            stmt_sub.c.rating_count,
+        ).order_by(desc(stmt_sub.c.total_ratings))
+        result = await session.execute(stmt)
+        data = result.all()
 
-    return [
-        {
-            "game": game,
-            "average_rating": float(average_rating) if average_rating else None,
+        return [
+            {
+                "game": game,
+                "average_rating": float(average_rating) if average_rating else None,
+                "rating_count": rating_count,
+            }
+            for game, average_rating, rating_count in data
+        ], games
+    else:
+        stmt = (
+            select(
+                GamesUserRatings.game,
+                func.avg(GamesUserRatings.rating).label("average_rating"),
+                func.count(GamesUserRatings.rating).label("rating_count"),
+            )
+            .where(GamesUserRatings.game == is_one_game)
+            .group_by(GamesUserRatings.game)
+        )
+
+        result = await session.execute(stmt)
+        data = result.first()
+
+        if not data:
+            return {
+                "game": data,
+                "average_rating": None,
+                "rating_count": 0,
+                "message": "У этой игры пока нет оценок",
+            }
+
+        game_name, avg_rating, rating_count = data
+
+        return {
+            "game": game_name,
+            "average_rating": float(avg_rating) if avg_rating else 0.0,
+            "rating_count": rating_count,
         }
-        for game, average_rating in data
-    ]
 
 
 async def hidden_games(
@@ -396,28 +441,6 @@ async def get_liked_games(
     if liked_games is None:
         return ["Empty"]
     return {"id": liked_games.user_id, "games": liked_games.games}
-
-
-# async def user_interactions(
-#     request: Request,
-#     session: AsyncSession = Depends(db_helper.session_dependency),
-# ):
-#     user = await get_user_by_cookie(request=request, session=session)
-#     stmt = (
-#         select(
-#             Users.username,
-#             Users.date_registration,
-#             Users.is_superuser,
-#             GamesUserLiked.game,
-#             GamesUserLiked.created_at,
-#             GamesUserRatings.game,
-#             GamesUserRatings.rating,
-#             GamesUserRatings.created_at,
-#         )
-#         .outerjoin(GamesUserRatings, Users.id == GamesUserRatings.user_id)
-#         .outerjoin(GamesUserLiked, Users.id == GamesUserLiked.user_id)
-#         .where(Users.id == user.id)
-#     )
 
 
 async def user_interactions(
@@ -551,28 +574,28 @@ async def genres_preference_algorithm(
     ]
 
 
-async def create_privilege_level(
-    privilege: PrivilegeLevel,
-    request: Request,
+async def get_genre_rpg(
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
-    user = await get_user_by_cookie(session, request)
-    expire_cookie: int = 0
-    if privilege.value == "weak":
-        expire_cookie = 20
-    if privilege.value == "medium":
-        expire_cookie = 2000
-    if privilege.value == "best":
-        expire_cookie = 10000
-    await session.execute(
-        update(Users)
-        .where(Users.username == user.username)
-        .values(
-            privilege=privilege,
-            cookie_privileged=func.now(),
-            cookie_privileged_expires=text(
-                f"TIMEZONE('utc', now()) + interval '{expire_cookie} minutes'"
-            ),
-        )
-    )
-    await session.commit()
+    stmt = select(Games).order_by(asc(Games.id)).where(Games.genre == "RPG")
+    res = await session.execute(stmt)
+    games = res.scalars().all()
+    return games
+
+
+async def get_genre_strategy(
+    session: AsyncSession = Depends(db_helper.session_dependency),
+):
+    stmt = select(Games).order_by(asc(Games.id)).where(Games.genre == "STRATEGY")
+    res = await session.execute(stmt)
+    games = res.scalars().all()
+    return games
+
+
+async def get_genre_action(
+    session: AsyncSession = Depends(db_helper.session_dependency),
+):
+    stmt = select(Games).order_by(asc(Games.id)).where(Games.genre == "ACTION")
+    res = await session.execute(stmt)
+    games = res.scalars().all()
+    return games

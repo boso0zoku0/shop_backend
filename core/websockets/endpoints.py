@@ -26,6 +26,13 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 
+@router.get("/get-clients")
+async def clients():
+    if manager.clients:
+        return list(manager.clients.keys())
+    return {"empty"}
+
+
 @router.websocket("/operator/{operator}/{client}")
 async def operator_ws(
     websocket: WebSocket,
@@ -48,22 +55,13 @@ async def operator_ws(
 
     try:
         while True:
-            # Ждем сообщения от оператора (для отправки клиенту)
             data: str = await websocket.receive_text()
             log.info(f"Оператор отправил: {data}")
-            # client
-            # operator
-            # message
             await broker.publish(
                 message={"client": client, "operator": operator, "message": data},
                 queue=queue_operators,
                 exchange=exchange,
             )
-
-            # if "client_id" in data and "message" in data:
-            #     await manager.send_to_client(
-            #         client_id=data["client_id"], message=data["message"]
-            #     )
 
     except WebSocketDisconnect:
         if operator in manager.operators:
@@ -105,7 +103,10 @@ async def clients_ws(
             data = await websocket.receive_text()
 
             await broker.publish(
-                message={"client": client, "message": data},
+                message={
+                    "from": client,
+                    "message": data,
+                },
                 queue=queue_clients,
                 exchange=exchange,
             )

@@ -6,7 +6,6 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 from core.faststream.broker import broker, exchange, queue_notify_client
 from core.models import PendingMessages
 from core.websockets.crud import insert_websocket_db
-from datetime import datetime
 
 log = logging.getLogger(__name__)
 
@@ -15,6 +14,13 @@ class WebsocketManager:
     def __init__(self):
         self.operators: dict[str, WebSocket] = {}
         self.clients: dict[str, WebSocket] = {}
+        self.active_clients_operators: dict[str, str] = {}  # client - operator
+
+    async def get_clients(self):
+        clients: list = []
+        for client in self.clients.keys():
+            clients.append(client)
+        return clients
 
     async def connect_client(
         self,
@@ -84,6 +90,7 @@ class WebsocketManager:
         session: AsyncSession,
     ):
         self.operators[operator] = websocket
+        self.active_clients_operators[client] = operator
         await insert_websocket_db(
             session=session,
             username=operator,
@@ -104,35 +111,38 @@ class WebsocketManager:
         )
 
     async def send_to_operator(self, client: str, message: str):
-
-        for op_id, op_ws in self.operators.items():
+        op = self.active_clients_operators.get(client, 0)
+        if op and op in self.operators:
             try:
-                await op_ws.send_json(
+                await self.operators[op].send_json(
                     {
                         "type": "client_message",
-                        "client": client,
+                        "from": client,
+                        "to": op,
                         "message": message,
-                        "timestamp": datetime.now().isoformat(),
                     }
                 )
-                log.info(f"Сообщение отправлено: {op_id}")
+                log.info(f"Сообщение отправлено: {op}")
             except Exception as e:
                 log.info(f"✗ Ошибка отправки {client} -> ...")
 
     async def send_to_client(self, client: str, operator: str, message: str):
-        """Отправка сообщения клиенту"""
-        try:
-            await self.clients[client].send_json(
-                {
-                    "type": "operator_message",
-                    "operator": operator,
-                    "client": client,
-                    "message": message,
-                }
-            )
-            log.info(f"✓ Сообщение отправлено клиенту {client}: {message}")
-        except Exception as e:
-            log.info(f"✗ Ошибка отправки {operator} -> {client}")
+
+        for cl, op in self.active_clients_operators.items():
+            if op == operator and cl == client:
+                """Отправка сообщения клиенту"""
+                try:
+                    await self.clients[cl].send_json(
+                        {
+                            "type": "operator_message",
+                            "from": op,
+                            "to": cl,
+                            "message": message,
+                        }
+                    )
+                    log.info(f"✓ Сообщение отправлено клиенту {cl}: {message}")
+                except Exception as e:
+                    log.info(f"✗ Ошибка отправки {op} -> {cl}")
 
     # async def notify_operator_client_connected(self, client: str) -> None:
     #     """Уведомление оператора о новом подключении клиента"""
@@ -152,7 +162,7 @@ class WebsocketManager:
         await self.clients.get(client).send_json(
             {
                 "type": "advertising",
-                "client": client,
+                "to": client,
                 "message": message,
             }
         )

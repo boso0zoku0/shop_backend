@@ -30,7 +30,7 @@ async def register_user(
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
     cookie = str(generate_session_id())
-    response.set_cookie(key="session_id", value=cookie, max_age=10000, path="/")
+    response.set_cookie(key="session_id", value=cookie, max_age=604800, path="/")
     await add_user(session=session, username=username, password=password)
     await session.execute(
         update(Users).where(Users.username == username).values(cookie=cookie)
@@ -53,7 +53,7 @@ async def user_login(
         response.set_cookie(
             key="session_id",
             value=cookie_update,
-            max_age=10000,
+            max_age=604800,
             path="/",
             samesite="lax",
             secure=False,

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query, status, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 from core import db_helper
-from core.auth.crud import get_current_user
+from core.auth.crud import get_current_user, create_privilege_level
 from core.crud import (
     games_catalog,
     game_select_genre,
@@ -12,16 +12,18 @@ from core.crud import (
     sort_date,
     add_rating_for_game,
     get_rating_for_games,
-    check_games,
-    check_game,
+    check_games_ratings,
     hidden_games,
     distribution_future,
     get_liked_games,
     user_interactions,
     get_games_preferred,
-    create_privilege_level,
+    delete_games_user_liked,
+    get_genre_rpg,
+    get_genre_action,
+    get_genre_strategy,
+    check_games,
 )
-from core.schemas import GamesBase
 from core.schemas.privilege_level import PrivilegeLevel
 
 router = APIRouter(
@@ -31,7 +33,7 @@ router = APIRouter(
 )
 
 
-@router.get("/to-watch/all", name="genres")
+@router.get("/watch/genres", name="genres")
 async def watch_games(
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
@@ -40,10 +42,10 @@ async def watch_games(
 
 @router.get("/find")
 async def find_game(
-    game: str = Query(description="Find Game"),
+    game=Query(description="Find Game"),
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
-    return await check_game(game=game, session=session)
+    return await check_games_ratings(session=session)
 
 
 @router.get("/to-watch/part")
@@ -71,6 +73,14 @@ async def add_game_to_favorites(
 ):
 
     return await create_favorite_game(game, request, session)
+
+
+@router.delete("/delete/games-user-liked")
+async def delete(
+    session: AsyncSession = Depends(db_helper.session_dependency),
+):
+
+    return await delete_games_user_liked(session)
 
 
 @router.get("/sort/by-date")
@@ -103,11 +113,19 @@ async def post_rating_for_game(
     )
 
 
-@router.get("/get/rating")
+@router.get("/get/rating/all")
 async def post_rating(
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
-    return await get_rating_for_games(session=session)
+    return await get_rating_for_games(session=session, is_one=False)
+
+
+@router.get("/get/rating")
+async def post_rating(
+    game: str = Query(description="Which game should I rate?"),
+    session: AsyncSession = Depends(db_helper.session_dependency),
+):
+    return await get_rating_for_games(session=session, is_one_game=game, is_one=True)
 
 
 @router.get("/hidden")
@@ -166,3 +184,24 @@ async def payment_create(
 ):
     response.set_cookie(key="payment", value=privilege.value, max_age=10000)
     await create_privilege_level(privilege=privilege, session=session, request=request)
+
+
+@router.get("/watch/genre/rpg")
+async def watch_genre(
+    session: AsyncSession = Depends(db_helper.session_dependency),
+):
+    return await get_genre_rpg(session=session)
+
+
+@router.get("/watch/genre/action")
+async def watch_genre(
+    session: AsyncSession = Depends(db_helper.session_dependency),
+):
+    return await get_genre_action(session=session)
+
+
+@router.get("/watch/genre/strategy")
+async def watch_genre(
+    session: AsyncSession = Depends(db_helper.session_dependency),
+):
+    return await get_genre_strategy(session=session)
