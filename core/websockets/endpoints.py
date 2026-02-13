@@ -30,14 +30,13 @@ router = APIRouter()
 async def clients():
     if manager.clients:
         return list(manager.clients.keys())
-    return {"empty"}
+    return []
 
 
-@router.websocket("/operator/{operator}/{client}")
+@router.websocket("/operator/{operator}")
 async def operator_ws(
     websocket: WebSocket,
     operator: str,
-    client: str,
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
     await websocket.accept()
@@ -46,7 +45,6 @@ async def operator_ws(
         session=session,
         websocket=websocket,
         operator=operator,
-        client=client,
         user_id=user["id"],
         ip_address=user["ip"],
         user_agent=user["user_agent"],
@@ -55,10 +53,14 @@ async def operator_ws(
 
     try:
         while True:
-            data: str = await websocket.receive_text()
+            data: dict = await websocket.receive_json()
             log.info(f"Оператор отправил: {data}")
             await broker.publish(
-                message={"client": client, "operator": operator, "message": data},
+                message={
+                    "from": operator,
+                    "to": data["to"],
+                    "message": data["message"],
+                },
                 queue=queue_operators,
                 exchange=exchange,
             )
@@ -96,16 +98,16 @@ async def clients_ws(
         is_active=True,
         is_advertising=True,
     )
-
+    log.info(f"Клиент {client} подключился")
     try:
         while True:
-            log.info(f"Клиент {client} подключился")
-            data = await websocket.receive_text()
-
+            data = await websocket.receive_json()
+            log.info(f"data: {data['from']} ; {data['message']}")
             await broker.publish(
                 message={
-                    "from": client,
-                    "message": data,
+                    "from": data["from"],
+                    "to": data["to"],
+                    "message": data["message"],
                 },
                 queue=queue_clients,
                 exchange=exchange,
