@@ -54,6 +54,8 @@ async def operator_ws(
     try:
         while True:
             data: dict = await websocket.receive_json()
+            print("endpoint websocket")
+            print(data)
             log.info(f"Оператор отправил: {data}")
             await broker.publish(
                 message={
@@ -102,16 +104,21 @@ async def clients_ws(
     try:
         while True:
             data = await websocket.receive_json()
-            log.info(f"data: {data['from']} ; {data['message']}")
-            await broker.publish(
-                message={
-                    "from": data["from"],
-                    "to": data["to"],
-                    "message": data["message"],
-                },
-                queue=queue_clients,
-                exchange=exchange,
+
+            handler_bot = await manager.sender_bot(
+                client=client, message=data["message"], session=session
             )
+            if not handler_bot:
+                log.info(f"data: {data['from']} ; {data['message']}")
+                await broker.publish(
+                    message={
+                        "from": data["from"],
+                        "to": data["to"],
+                        "message": data["message"],
+                    },
+                    queue=queue_clients,
+                    exchange=exchange,
+                )
 
     except WebSocketDisconnect:
         await session.execute(
@@ -121,178 +128,3 @@ async def clients_ws(
         )
         await session.commit()
         del manager.clients[client]
-
-
-#
-# connection_manager = ConnectionManager()
-# # RabbitMQ сервис
-# rabbitmq = SupportChatRabbitMQ()
-
-# @router.websocket("/ws/client/{client_id}")
-# async def client_websocket(websocket: WebSocket, client_id: str):
-#     """WebSocket для клиентов (публикуют сообщения)"""
-#     await connection_manager.connect_client(client_id, websocket)
-#
-#     try:
-#         while True:
-#             # Клиент отправляет сообщение
-#             data = await websocket.receive_text()
-#             message_data = json.loads(data)
-#
-#             if message_data.get("type") == "new_request":
-#                 # Клиент создает новый запрос в поддержку
-#
-#                 await websocket.send_text(
-#                     json.dumps(
-#                         {
-#                             "status": "request_sent",
-#                             "message": "Запрос отправлен операторам",
-#                         }
-#                     )
-#                 )
-#
-#             elif message_data.get("type") == "chat_message":
-#                 # Сообщение в существующем чате
-#                 chat_id = message_data["chat_id"]
-#                 await rabbitmq.send_chat_message(
-#                     chat_id=chat_id,
-#                     sender=f"client_{client_id}",
-#                     message=message_data["text"],
-#                 )
-#
-#     except WebSocketDisconnect:
-#         await connection_manager.disconnect_client(client_id)
-#         print(f"Client {client_id} disconnected")
-#
-#
-# # =================== ОПЕРАТОРЫ ===================
-#
-#
-# @router.websocket("/ws/operator/{operator_id}")
-# async def operator_websocket(websocket: WebSocket, operator_id: str):
-#     """WebSocket для операторов (потребляют сообщения)"""
-#     await connection_manager.connect_operator(operator_id, websocket)
-#
-#     try:
-#         # Запускаем прослушивание новых запросов
-#         await rabbitmq.listen_for_requests(operator_id)
-#
-#         while True:
-#             # Оператор может отправлять сообщения клиентам
-#             data = await websocket.receive_text()
-#             message_data = json.loads(data)
-#
-#             if message_data.get("type") == "accept_request":
-#                 # Оператор принимает запрос от клиента
-#                 client_id = message_data["client_id"]
-#                 chat_id = await rabbitmq.create_chat_session(
-#                     client_id=client_id, operator_id=operator_id
-#                 )
-#
-#                 # Уведомляем клиента
-#                 await connection_manager.send_to_client(
-#                     client_id,
-#                     json.dumps(
-#                         {
-#                             "type": "operator_assigned",
-#                             "operator_id": operator_id,
-#                             "chat_id": chat_id,
-#                         }
-#                     ),
-#                 )
-#
-#                 # Уведомляем оператора
-#                 await websocket.send_text(
-#                     json.dumps(
-#                         {
-#                             "type": "chat_created",
-#                             "chat_id": chat_id,
-#                             "client_id": client_id,
-#                         }
-#                     )
-#                 )
-#
-#             elif message_data.get("type") == "chat_message":
-#                 # Оператор отвечает в чат
-#                 chat_id = message_data["chat_id"]
-#                 await rabbitmq.send_chat_message(
-#                     chat_id=chat_id,
-#                     sender=f"operator_{operator_id}",
-#                     message=message_data["text"],
-#                 )
-#
-#                 # Отправляем клиенту
-#                 client_id = await rabbitmq.get_client_by_chat(chat_id)
-#                 await connection_manager.send_to_client(
-#                     client_id,
-#                     json.dumps(
-#                         {
-#                             "type": "message",
-#                             "chat_id": chat_id,
-#                             "text": message_data["text"],
-#                             "sender": f"operator_{operator_id}",
-#                         }
-#                     ),
-#                 )
-#
-#     except WebSocketDisconnect:
-#         await connection_manager.disconnect_operator(operator_id)
-#         print(f"Operator {operator_id} disconnected")
-#
-#
-# # =================== HTTP ЭНДПОИНТЫ ===================
-#
-#
-# @router.get("/api/chat/requests")
-# async def get_pending_requests(operator_id: str):
-#     """Получить список ожидающих запросов (для оператора)"""
-#     return await rabbitmq.get_pending_requests()
-#
-#
-# @router.post("/api/chat/{chat_id}/close")
-# async def close_chat(chat_id: str, operator_id: str):
-#     """Закрыть чат (оператор)"""
-#     await rabbitmq.close_chat(chat_id)
-#     return {"status": "chat_closed", "chat_id": chat_id}
-#
-#
-# @router.get("/api/operator/{operator_id}/stats")
-# async def get_operator_stats(operator_id: str):
-#     """Статистика оператора"""
-#     return await rabbitmq.get_operator_stats(operator_id)
-#
-#
-# # =================== ДОПОЛНИТЕЛЬНЫЕ ===================
-#
-#
-# @router.websocket("/ws/chat/{chat_id}")
-# async def chat_websocket(
-#     websocket: WebSocket, chat_id: str, user_type: str, user_id: str
-# ):
-#     """Прямое подключение к очереди чата (альтернатива)"""
-#     await websocket.accept()
-#
-#     # Подписываемся на очередь этого чата
-#     async def on_chat_message(msg: str):
-#         await websocket.send_text(msg)
-#
-#     await rabbitmq.subscribe_to_chat(chat_id, on_chat_message)
-#
-#     try:
-#         while True:
-#             data = await websocket.receive_text()
-#             # Отправляем сообщение в очередь чата
-#             await rabbitmq.send_to_chat_queue(chat_id, data)
-#     except WebSocketDisconnect:
-#         pass
-#
-#
-# @router.get("/health")
-# async def health_check():
-#     """Проверка здоровья сервиса и RabbitMQ"""
-#     is_rabbitmq_ok = await rabbitmq.check_connection()
-#     return {
-#         "status": "healthy" if is_rabbitmq_ok else "unhealthy",
-#         "rabbitmq": "connected" if is_rabbitmq_ok else "disconnected",
-#         "timestamp": "2024-01-29T10:00:00",
-#     }

@@ -1,8 +1,11 @@
 import logging
+
+from click import pass_context
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
+from core.crud import get_list_games, get_list_genres
 from core.faststream.broker import broker, exchange, queue_notify_client
 from core.models import PendingMessages
 from core.websockets.crud import insert_websocket_db
@@ -14,13 +17,7 @@ class WebsocketManager:
     def __init__(self):
         self.operators: dict[str, WebSocket] = {}
         self.clients: dict[str, WebSocket] = {}
-        self.active_clients_operators: dict[str, str] = {}  # client - operator
-
-    async def get_clients(self):
-        clients: list = []
-        for client in self.clients.keys():
-            clients.append(client)
-        return clients
+        # self.active_clients_operators: dict[str, str] = {}  # client - operator
 
     async def connect_client(
         self,
@@ -34,9 +31,7 @@ class WebsocketManager:
         is_advertising: bool = False,
     ):
         self.clients[client] = websocket
-        await self.clients[client].send_json(
-            {"type": "greeting", "message": f"Hello {client} how can I help you?"}
-        )
+        await self.init_communication_with_client(client)
 
         if not is_advertising:
             await insert_websocket_db(
@@ -103,9 +98,59 @@ class WebsocketManager:
         # )
         # log.info(f"✓ Оператор {operator} подключен")
 
-    async def greeting_with_client(self, client: str):
+    async def get_clients(self):
+        clients: list = []
+        for client in self.clients.keys():
+            clients.append(client)
+        return clients
+
+    async def sender_bot(self, client: str, message: str, session: AsyncSession):
+
+        triggers_operator = {"help me", "call the operator"}
+        triggers_bot = {
+            "View the movie catalog": lambda: get_list_games(session),
+            "View the genre catalog": lambda: get_list_genres(session),
+            "Find out the creator of the website": "The creator comes from a small town. The site was created in 2026 as part of a single developer",
+            "Call the operator with command - 'help me'": "The operator is already rushing to you",
+        }
+        # Проверка на вызов оператора
+        if any(trigger in message for trigger in triggers_operator):
+            await self.clients[client].send_json(
+                {
+                    "type": "bot_message",
+                    "message": "The operator is already rushing to you",
+                }
+            )
+            return True
+        # Проверка на остальные команды в боте
+        for question, response in triggers_bot.items():
+            if question in message:
+                if callable(response):
+                    answer = await response()
+                else:
+                    answer = response
+                await self.clients[client].send_json(
+                    {
+                        "type": "bot_message",
+                        "message": answer,
+                        "isButton": False,
+                    }
+                )
+                return True
+        return False
+
+    async def init_communication_with_client(self, client: str):
         await self.clients[client].send_json(
-            {"type": "greeting", "message": f"Hello, {client}, how can I help you?"}
+            {
+                "type": "greeting",
+                "message": [
+                    f"Hello, {client}, how can I help you?",
+                    "1)View the movie catalog",
+                    "2) View the genre catalog",
+                    "3) Find out the creator of the website",
+                    "4) Call the operator with command - 'help me'",
+                ],
+            }
         )
 
     async def send_to_operator(self, client: str, operator: str, message: str):
@@ -136,20 +181,6 @@ class WebsocketManager:
             log.info(f"✓ Сообщение отправлено клиенту {client}: {message}")
         except Exception as e:
             log.info(f"✗ Ошибка отправки {operator} -> {client}")
-
-    # async def notify_operator_client_connected(self, client: str) -> None:
-    #     """Уведомление оператора о новом подключении клиента"""
-    #     for operator_id, operator_ws in self.operators.items():
-    #         try:
-    #             await operator_ws.send_json(
-    #                 {
-    #                     "type": "notify_to_connection",
-    #                     "client_id": client,
-    #                     "timestamp": datetime.now().isoformat(),
-    #                 }
-    #             )
-    #         except WebSocketDisconnect as e:
-    #             log.warning(e)
 
     async def advertising_to_client(self, client: str, message: str):
         await self.clients.get(client).send_json(

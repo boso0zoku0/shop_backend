@@ -599,3 +599,31 @@ async def get_genre_action(
     res = await session.execute(stmt)
     games = res.scalars().all()
     return games
+
+
+async def get_list_games(  # For Websockets
+    session: AsyncSession = Depends(db_helper.session_dependency),
+):
+    stmt = select(Games.name).limit(5)
+    res = await session.execute(stmt)
+    games = res.scalars().all()
+    return list(games)
+
+
+async def get_list_genres(  # For Websockets
+    session: AsyncSession = Depends(db_helper.session_dependency),
+):
+    stmt = select(Games.genre)
+    res = await session.execute(stmt)
+    genres = res.scalars().all()
+    # Преобразуем в множество строк с нижним регистром
+    unique_genres = set()
+    for genre in genres:
+        # Преобразуем объект в строку и приводим к нижнему регистру
+        genre_str = str(genre).split(".")[-1].lower()  # "rpg", "action", "strategy"
+        unique_genres.add(genre_str)
+
+    # Если нужен список (для JSON)
+    result_list = list(unique_genres)
+    str_res = ". ".join(result_list)
+    return str_res
