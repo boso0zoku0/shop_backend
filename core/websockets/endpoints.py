@@ -108,7 +108,7 @@ async def clients_ws(
             handler_bot = await manager.sender_bot(
                 client=client, message=data["message"], session=session
             )
-            if not handler_bot:
+            if not handler_bot and "to" in data:
                 log.info(f"data: {data['from']} ; {data['message']}")
                 await broker.publish(
                     message={
@@ -119,6 +119,8 @@ async def clients_ws(
                     queue=queue_clients,
                     exchange=exchange,
                 )
+            elif not handler_bot:
+                log.info("Кликает по ответу бота")
 
     except WebSocketDisconnect:
         await session.execute(

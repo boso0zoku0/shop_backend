@@ -133,7 +133,6 @@ class WebsocketManager:
                     {
                         "type": "bot_message",
                         "message": answer,
-                        "isButton": False,
                     }
                 )
                 return True

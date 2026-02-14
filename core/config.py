@@ -34,8 +34,8 @@ class AuthJWT(BaseModel):
     private_key_path: Path = BASE_DIR / "core" / "auth" / "certs" / "jwt-private.pem"
     public_key_path: Path = BASE_DIR / "core" / "auth" / "certs" / "jwt-public.pem"
     algorithm: str = "RS256"
-    access_token_expire_minutes: int = 3
-    refresh_token_expire_days: int = 30
+    access_token_expire_minutes: int = 10080
+    refresh_token_expire_days: int = 302400
 
 
 class ApiV1Prefix(BaseModel):
@@ -44,7 +44,7 @@ class ApiV1Prefix(BaseModel):
 
 
 class AccessToken(BaseModel):
-    lifetime_seconds: int = 3600
+    lifetime_seconds: int = 10080
     reset_password_token_secret: str
     verification_token_secret: str
 

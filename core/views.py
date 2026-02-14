@@ -182,7 +182,7 @@ async def payment_create(
     response: Response,
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
-    response.set_cookie(key="payment", value=privilege.value, max_age=10000)
+    response.set_cookie(key="payment", value=privilege.value, max_age=604800)
     await create_privilege_level(privilege=privilege, session=session, request=request)
 
 

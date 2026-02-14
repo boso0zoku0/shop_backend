@@ -607,9 +607,17 @@ async def get_list_games(  # For Websockets
     stmt = select(Games.name).limit(5)
     res = await session.execute(stmt)
     games = res.scalars().all()
+    print(games)
     return list(games)
 
 
+# BlitzkriegCyber Shadow: RetributionEchoes Of AncestorsIl-2 SturmovikCorporate Ascension
+# - Blitzkrieg
+# - Cyber Shadow: Retribution
+# - Echoes Of Ancestors
+# - Il-2 Sturmovik
+# - Corporate Ascension
+# -
 async def get_list_genres(  # For Websockets
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):

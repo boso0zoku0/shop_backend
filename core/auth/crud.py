@@ -97,7 +97,9 @@ async def login(
                 update(Users)
                 .where(Users.username == username)
                 .values(
-                    cookie_expires=text("TIMEZONE('utc', now()) + interval '5 minutes'")
+                    cookie_expires=text(
+                        "TIMEZONE('utc', now()) + interval '10800 minutes'"
+                    )
                 )
             )
             pending_msg = PendingMessages(
@@ -108,11 +110,12 @@ async def login(
             session.add(pending_msg)
 
             await session.commit()
+
         await session.execute(
             update(Users)
             .where(Users.username == username)
             .values(
-                cookie_expires=text("TIMEZONE('utc', now()) + interval '5 minutes'")
+                cookie_expires=text("TIMEZONE('utc', now()) + interval '10800 minutes'")
             )
         )
         return True
