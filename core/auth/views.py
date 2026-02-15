@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Response, Form, Request, status, HTTPException
-from sqlalchemy import update, insert, delete
+from sqlalchemy import update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -10,10 +10,8 @@ from core.auth.crud import (
     generate_session_id,
     get_user_by_cookie,
     user_statistics,
-    get_about_me,
-    advertising_offer_to_client,
 )
-from core.models import Users, PendingMessages
+from core.models import Users
 from core.models.ws_connections import WebsocketConnections
 
 router = APIRouter(
@@ -22,7 +20,7 @@ router = APIRouter(
 )
 
 
-@router.post("/registration")
+@router.post("/registration", status_code=status.HTTP_201_CREATED)
 async def register_user(
     response: Response,
     username: str = Form(),
@@ -39,7 +37,7 @@ async def register_user(
     return {"username": username, "password": password, "cookie_session_id": cookie}
 
 
-@router.post("/login")
+@router.post("/login", status_code=status.HTTP_200_OK)
 async def user_login(
     response: Response,
     username: str = Form(),
@@ -80,7 +78,7 @@ async def cookie_read(
     return user_by_cookie
 
 
-@router.delete("/del")
+@router.delete("/del", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(session: AsyncSession = Depends(db_helper.session_dependency)):
     await session.execute(delete(WebsocketConnections))
     await session.commit()
@@ -92,7 +90,9 @@ async def logout(
     request: Request,
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
-    user_by_cookie = await get_user_by_cookie(request=request, session=session)
+    user_by_cookie = await get_user_by_cookie(
+        request=request, session=session, is_logout=True
+    )
 
     await session.delete(user_by_cookie)
     await session.commit()
@@ -103,10 +103,3 @@ async def logout(
 @router.get("/users/statistics", status_code=status.HTTP_200_OK)
 async def statistics(session: AsyncSession = Depends(db_helper.session_dependency)):
     return await user_statistics(session=session)
-
-
-@router.get("/about/me", status_code=status.HTTP_200_OK)
-async def about_me(
-    request: Request, session: AsyncSession = Depends(db_helper.session_dependency)
-):
-    return await get_about_me(request=request, session=session)

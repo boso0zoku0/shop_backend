@@ -1,7 +1,10 @@
 from datetime import datetime
+from typing import Literal
 
 from fastapi import Form
 from pydantic import BaseModel
+
+from core.schemas.privilege_level import PrivilegeLevel
 
 
 class UsersBase(BaseModel):
@@ -17,3 +20,12 @@ class UsersBase(BaseModel):
 class UsersGet(BaseModel):
     username: str
     date_registration: datetime
+
+
+class UserInfo(BaseModel):
+    username: str
+    date_registration: datetime
+    privilege: PrivilegeLevel | None
+    cookie_privileged: datetime | None
+    cookie_privileged_expires: datetime | None
+    game: str | None

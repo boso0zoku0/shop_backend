@@ -53,7 +53,6 @@ class JWTHelper:
         pwd_encode = password.encode("utf-8")
         salt = bcrypt.gensalt()
         return bcrypt.hashpw(pwd_encode, salt)
-        # return hashed_password_bytes.decode("utf-8")
 
     def validate_password(self, password: str, hashed_password: bytes) -> bool:
         return bcrypt.checkpw(

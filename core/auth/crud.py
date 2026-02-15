@@ -2,7 +2,7 @@ import secrets
 from datetime import datetime, timezone, timedelta
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Form, Request
+from fastapi import Depends, HTTPException, Form
 from sqlalchemy import select, insert, and_, func, update, text
 from sqlalchemy.exc import IntegrityError
 
@@ -25,6 +25,7 @@ async def advertising_offer_to_client(
     now = datetime.now(tz=timezone.utc)
     time_up = timedelta(days=7)
     expires_time = now - time_up
+    operators = ["bob", "john"]
     stmt = (
         select(
             func.count(WebsocketConnections.connected_at),
@@ -33,6 +34,7 @@ async def advertising_offer_to_client(
         .where(
             and_(
                 Users.username == client,
+                Users.username != "bob",
                 WebsocketConnections.connected_at >= expires_time,
             )
         )
@@ -46,7 +48,9 @@ async def advertising_offer_to_client(
     return False
 
 
-async def get_user_by_cookie(session: AsyncSession, request: Request):
+async def get_user_by_cookie(
+    session: AsyncSession, request: Request, is_logout: bool | None = False
+):
     now = datetime.now(tz=timezone.utc)
     cookie = request.cookies.get("session_id")
     if not cookie:
@@ -64,6 +68,8 @@ async def get_user_by_cookie(session: AsyncSession, request: Request):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired"
         )
+    if is_logout:
+        return user
     return {"username": user.username, "user_id": user.id}
 
 
@@ -130,14 +136,9 @@ async def add_user(
     session: AsyncSession = Depends(db_helper.session_dependency()),
 ) -> None:
     try:
-        stmt = select(Users).where(
-            and_(Users.username == username, Users.password == password)
-        )
-        result = await session.execute(stmt)
-        result.scalar()
         hash_password = helper.hash_password(password=password)
         access_token = helper.encode_jwt(
-            payload={"username": username, "password": password}
+            payload={"sub": username, "username": username}
         )
         stmt = insert(Users).values(
             username=username,
@@ -151,7 +152,7 @@ async def add_user(
     except IntegrityError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="This user is already registered. Сhange your registration details.",
+            detail="This user is already registered. Change your registration details.",
         )
 
 
@@ -168,42 +169,6 @@ async def user_statistics(
     res = await session.execute(stmt)
     users_count = res.scalar()
     return users_count or 0
-
-
-async def get_about_me(
-    request: Request,
-    session: AsyncSession = Depends(db_helper.session_dependency),
-):
-    current_user = await get_user_by_cookie(session, request)
-
-    # CTE с оконными функциями
-    ranked_users = select(
-        Users.username,
-        Users.date_registration,
-        func.count().over().label("total_users"),
-        func.row_number()
-        .over(order_by=[Users.date_registration, Users.id])
-        .label("registration_order"),
-    ).cte("ranked_users")
-
-    stmt = select(
-        ranked_users.c.username,
-        ranked_users.c.date_registration,
-        ranked_users.c.total_users,
-        ranked_users.c.registration_order,
-        # CTE создает временную таблицу. Через c. обращаемся к колонке
-    ).where(ranked_users.c.username == current_user.username)
-
-    result = await session.execute(stmt)
-    data = result.first()
-
-    return {
-        "username": data.username,
-        "date_registration": data.date_registration,
-        "total_users": data.total_users,
-        "registration_order": data.registration_order,
-        "message": f"Among {data.total_users} users, you were #{data.registration_order} to register.",
-    }
 
 
 def generate_session_id():
@@ -225,7 +190,7 @@ async def create_privilege_level(
         expire_cookie = 10000
     await session.execute(
         update(Users)
-        .where(Users.username == user.username)
+        .where(Users.username == user.get("username"))
         .values(
             privilege=privilege,
             cookie_privileged=func.now(),

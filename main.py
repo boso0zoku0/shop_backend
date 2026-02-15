@@ -11,7 +11,7 @@ from core.super_user import super_user_games_router
 from core.auth.views import router as auth_router
 from core.config import settings
 from core.frontend_db.views import router
-
+from core.users.views import router as users_router
 from core.websockets.endpoints import router as ws_router
 from core.faststream.handlers import broker
 
@@ -27,6 +27,7 @@ app = FastAPI(lifespan=lifespan)
 
 
 app.include_router(games_router)
+app.include_router(users_router)
 app.include_router(super_user_games_router)
 
 app.include_router(auth_router)

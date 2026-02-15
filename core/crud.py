@@ -1,4 +1,5 @@
 import enum
+import json
 from typing import Literal
 from urllib.parse import urlencode
 
@@ -129,12 +130,6 @@ async def create_favorite_game(
 ):
     user = await get_user_by_cookie(session, request)
 
-    # if not user:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_404_NOT_FOUND,
-    #         detail="Please register on the site to add games to your favorites.",
-    #     )
-
     stmt = select(Games.name, Games.genre).where(Games.name == game)
     result = await session.execute(stmt)
     game, genre = result.first()
@@ -143,12 +138,18 @@ async def create_favorite_game(
             status_code=status.HTTP_404_NOT_FOUND, detail="Game not found"
         )
 
-    stmt = select(Users.favorite_genre).where(Users.username == user.username)
+    stmt = select(Users.favorite_genre).where(Users.username == user["username"])
     res = await session.execute(stmt)
     users_favorite_genre = res.scalar()
-
+    if users_favorite_genre is None:
+        await session.execute(
+            update(Users)
+            .where(Users.username == user["username"])
+            .values(favorite_genre={"action": 0, "rpg": 0, "strategy": 0})
+        )
+        await session.commit()
     stmt = select(GamesUserLiked.id).where(
-        and_(GamesUserLiked.user_id == user.id, GamesUserLiked.game == game)
+        and_(GamesUserLiked.user_id == user.get("user_id"), GamesUserLiked.game == game)
     )
     res = await session.execute(stmt)
     users = res.first()
@@ -161,7 +162,7 @@ async def create_favorite_game(
     else:
         stmt = GamesUserLiked(
             game=game,
-            user_id=user.id,
+            user_id=user.get("user_id"),
         )
         session.add(stmt)
         await session.commit()
@@ -169,7 +170,7 @@ async def create_favorite_game(
         users_favorite_genre[genre.value] += 1  # Учту какого жанра игру лайкнул юзер
         stmt_2 = (
             update(Users)
-            .where(Users.username == user.username)
+            .where(Users.username == user.get("username"))
             .values(favorite_genre=users_favorite_genre)
         )
         await session.execute(stmt_2)
@@ -433,7 +434,7 @@ async def get_liked_games(
             func.coalesce(func.array_agg(GamesUserLiked.game), []).label("games"),
         )
         .join(Users, GamesUserLiked.user_id == Users.id)
-        .where(Users.id == user.id)
+        .where(Users.id == user.get("user_id"))
         .group_by(GamesUserLiked.user_id)
     )
     res = await session.execute(stmt)
@@ -463,7 +464,7 @@ async def user_interactions(
                 )
             ).label("rating_games"),
         )
-        .where(GamesUserRatings.user_id == user.id)
+        .where(GamesUserRatings.user_id == user.get("user_id"))
         .group_by(GamesUserRatings.user_id)
         .subquery()
     )
@@ -480,7 +481,7 @@ async def user_interactions(
                 ),
             ).label("liked_games"),
         )
-        .where(GamesUserLiked.user_id == user.id)
+        .where(GamesUserLiked.user_id == user.get("user_id"))
         .group_by(GamesUserLiked.user_id)
         .subquery()
     )
@@ -495,7 +496,7 @@ async def user_interactions(
         )
         .outerjoin(subquery_ratings, Users.id == subquery_ratings.c.user_id)
         .outerjoin(subquery_liked, Users.id == subquery_liked.c.user_id)
-        .where(Users.id == user.id)
+        .where(Users.id == user.get("user_id"))
     )
     res = await session.execute(stmt)
     data = res.first()
@@ -514,7 +515,7 @@ async def get_games_preferred(
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
     user = await get_user_by_cookie(session, request)
-    stmt = select(Users.favorite_genre).where(Users.id == user.id)
+    stmt = select(Users.favorite_genre).where(Users.id == user.get("user_id"))
     res = await session.execute(stmt)
     genres = res.scalar()
     all_games = await genres_preference_algorithm(

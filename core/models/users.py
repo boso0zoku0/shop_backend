@@ -34,9 +34,9 @@ class Users(Base):
         nullable=False,
     )
     privilege: Mapped[PrivilegeLevel] = mapped_column(
-        SQLEnum(PrivilegeLevel, name="privilege_level"),
+        SQLEnum(PrivilegeLevel, name="privilege"),
         nullable=True,
-        name="privilege_level",
+        name="privilege",
     )
     cookie_privileged: Mapped[TIMESTAMP] = mapped_column(
         TIMESTAMP(timezone=True),
