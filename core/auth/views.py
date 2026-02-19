@@ -53,7 +53,6 @@ async def user_login(
             value=cookie_update,
             max_age=604800,
             path="/",
-            samesite="lax",
             secure=False,
         )
         await session.execute(

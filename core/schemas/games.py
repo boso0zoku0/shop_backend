@@ -7,6 +7,14 @@ from sqlalchemy.orm import Mapped
 from core.models import GameGenre
 
 
+class GameGenre(enum.Enum):
+    ACTION = "action"
+    ADVENTURE = "adventure"
+    RPG = "rpg"
+    STRATEGY = "strategy"
+    SIMULATION = "simulation"
+
+
 class GamesBase(BaseModel):
     name: str
     genre: Literal["ACTION", "ADVENTURE", "RPG", "STRATEGY", "SIMULATION"]

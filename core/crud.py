@@ -20,7 +20,6 @@ from sqlalchemy import (
 from sqlalchemy.exc import NoResultFound, IntegrityError
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql.functions import user
 from starlette.responses import RedirectResponse
 
 from core import db_helper
@@ -32,6 +31,8 @@ from core.models import (
     GamesUserRatings,
 )
 from core.schemas import GamesBase
+from core.redis.manager import redis_manager
+from core.redis.redis_crud import redis_crud
 
 
 class SortDate(enum.Enum):
@@ -48,11 +49,31 @@ class GameRating(enum.Enum):
 
 
 async def check_games(session: AsyncSession = Depends(db_helper.session_dependency())):
+    client = await redis_manager.get_client()
+    cached_games = await client.get("games:all")
+    if cached_games:
+        return json.loads(cached_games)
 
     stmt = select(Games)
     res = await session.execute(stmt)
     games = res.scalars().all()
-    return games
+
+    games_data = [
+        {
+            "name": game.name,
+            "genre": game.genre,
+            "release_year": game.release_year,
+            "story": game.story,
+            "gameplay": game.gameplay,
+            "graphics": game.graphics,
+            "game_development": game.game_development,
+            "gallery": game.gallery,
+        }
+        for game in games
+    ]
+    games_json = json.dumps(games_data, default=str, ensure_ascii=False)
+    await redis_manager.set("games:all", games_json, ex=3600)
+    return games_data
 
 
 async def check_games_ratings(

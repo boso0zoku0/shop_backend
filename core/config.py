@@ -1,13 +1,20 @@
+import os
+
 from sqlalchemy.orm import DeclarativeBase, declared_attr
 import logging
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Literal
 import logging
 
 BASE_DIR = Path(__file__).parent.parent
+
+
+class RedisConfig(BaseModel):
+    host: str = "localhost"
+    port: int = 6379
 
 
 class Base(DeclarativeBase):
@@ -56,6 +63,7 @@ class Setting(BaseSettings):
     # access_token: AccessToken = AccessToken()
     logging: LoggingConfig = LoggingConfig()
     auth_jwt: AuthJWT = AuthJWT()
+    redis: RedisConfig = RedisConfig()
 
 
 settings = Setting()

@@ -15,6 +15,7 @@ from core.models import GamesCharacteristics
 from core.models import GamesUserRatings
 from core.models import WebsocketsConnections
 from core.models.pending_messages import PendingMessages
+from core.models.payments import Payments
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

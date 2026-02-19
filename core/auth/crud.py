@@ -183,7 +183,7 @@ async def create_privilege_level(
     user = await get_user_by_cookie(session, request)
     expire_cookie: int = 0
     if privilege.value == "weak":
-        expire_cookie = 20
+        expire_cookie = 200
     if privilege.value == "medium":
         expire_cookie = 2000
     if privilege.value == "best":

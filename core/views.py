@@ -33,7 +33,7 @@ router = APIRouter(
 )
 
 
-@router.get("/watch/genres", name="genres")
+@router.get("/", name="games")
 async def watch_games(
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):

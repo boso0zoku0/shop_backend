@@ -7,3 +7,4 @@ from core.models.games_characteristics import (
 from core.models.games_user_ratings import GamesUserRatings as GamesUserRatings
 from core.models.ws_connections import WebsocketConnections as WebsocketsConnections
 from core.models.pending_messages import PendingMessages as PendingMessages
+from core.schemas.payments import PaymentSchema as PaymentSchema

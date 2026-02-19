@@ -8,7 +8,7 @@ from core.frontend_db.crud import (
     my_account,
     user_vote_ratings,
 )
-from core.crud import get_genre_rpg, get_genre_strategy, get_genre_action
+from core.crud import get_genre_rpg, get_genre_strategy, get_genre_action, check_games
 from core.models import GamesUserRatings
 from core.schemas import GamesBase
 
