@@ -12,6 +12,7 @@ from core.payments.manager import (
     create_payment_with_future_linking_card_during_payment,
     check_payment_linking_card_during_payment,
     payment_with_linked_card,
+    create_invoice,
 )
 
 router = APIRouter(
@@ -28,6 +29,16 @@ async def create(
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
     return await create_payment(price, request=request, session=session)
+
+
+@router.get("/get")
+async def get_payments():
+    return Payment.list()
+
+
+@router.post("/invoice/add")
+async def invoice():
+    return await create_invoice()
 
 
 @router.post("/add/payment/future/linking")

@@ -1,11 +1,12 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status, Depends, Request
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 from yookassa import Configuration, Payment
+from yookassa.invoice import Invoice
 import os
 from dotenv import load_dotenv
 from yookassa.domain.exceptions import NotFoundError
@@ -148,7 +149,12 @@ async def create_payment(
                 "type": "redirect",
                 "return_url": f"http://localhost:5173/games",
             },
-            "capture": True,
+            """
+                "capture": True - Платеж одностадийный, False - платеж двухстадийный
+                Двух стадийный платеж полезен, когда после оплаты, деньги не сразу же переходят к продавцу
+                Пример: Авито. Деньги покупателя приходят после сделки
+            """
+            "capture": False,
             "description": "Заказ №1",
         },
         idempotency_key=uuid.uuid4(),
@@ -179,3 +185,35 @@ def partial_debiting(payment_id):
         },
     )
     return payment
+
+
+async def create_invoice():
+    expires_at = (
+        (datetime.now(timezone.utc) + timedelta(hours=1))
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
+
+    invoice = await run_in_threadpool(
+        Invoice.create,
+        {
+            "payment_data": {
+                "amount": {"value": "10.00", "currency": "RUB"},
+                "capture": True,
+                "description": "Заказ №37",
+            },
+            "cart": [
+                {
+                    "description": "Товар",
+                    "price": {"value": "10.00", "currency": "RUB"},
+                    "quantity": 1.000,
+                },
+            ],
+            "delivery_method_data": {"type": "self"},
+            "locale": "ru_RU",
+            "expires_at": expires_at,
+            "description": "Счет",
+        },
+        idempotency_key=uuid.uuid4(),
+    )
+    return invoice
