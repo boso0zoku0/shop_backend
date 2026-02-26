@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Response, Form, Request, status, HTTPException
-from sqlalchemy import update, delete
+from sqlalchemy import update, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -44,9 +44,11 @@ async def user_login(
     password: str = Form(),
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
+    stmt = select(Users.is_superuser).where(Users.username == username)
+    res = await session.execute(stmt)
+    is_super_user = res.scalar_one_or_none()
     response_validate = await login(session, username, password)
     if response_validate:
-
         cookie_update = generate_session_id()
         response.set_cookie(
             key="session_id",
@@ -63,7 +65,9 @@ async def user_login(
             )
         )
         await session.commit()
-        return {"cookie_session_id": cookie_update}
+        return {
+            "cookie_session_id": cookie_update,
+        }
     else:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
 
@@ -81,6 +85,18 @@ async def cookie_read(
 async def delete_user(session: AsyncSession = Depends(db_helper.session_dependency)):
     await session.execute(delete(WebsocketConnections))
     await session.commit()
+
+
+@router.get("/is-super-user", status_code=status.HTTP_200_OK)
+async def get_user(
+    request: Request, session: AsyncSession = Depends(db_helper.session_dependency)
+):
+    stmt = select(Users.is_superuser).where(
+        Users.cookie == request.cookies["session_id"]
+    )
+    res = await session.execute(stmt)
+    is_super_user = res.scalar_one_or_none()
+    return is_super_user
 
 
 @router.delete("/logout", status_code=status.HTTP_200_OK)

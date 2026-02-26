@@ -7,7 +7,7 @@ __pycache__/
 *.so
 
 # Alembic
-
+core/leetcode
 ./alembic
 # Distribution / packaging
 .Python

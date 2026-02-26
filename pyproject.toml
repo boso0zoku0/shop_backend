@@ -24,6 +24,8 @@ dependencies = [
     "fastapi-cache2[dynamodb,memcache]>=0.2.2",
     "faststream[rabbit]>=0.6.5",
     "redis[hiredis]>=7.2.0",
+    "aiofiles>=25.1.0",
+    "python-magic-bin>=0.4.14",
 ]
 
 [dependency-groups]

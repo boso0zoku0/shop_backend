@@ -8,11 +8,10 @@ from core.auth.crud import get_current_user, create_privilege_level
 from core.crud import (
     games_catalog,
     game_select_genre,
-    create_favorite_game,
+    like_game,
     sort_date,
     add_rating_for_game,
-    get_rating_for_games,
-    check_games_ratings,
+    get_rating_games,
     hidden_games,
     distribution_future,
     get_liked_games,
@@ -22,7 +21,10 @@ from core.crud import (
     get_genre_rpg,
     get_genre_action,
     get_genre_strategy,
-    check_games,
+    get_game,
+    get_genres,
+    get_games,
+    my_account,
 )
 from core.schemas.privilege_level import PrivilegeLevel
 
@@ -35,9 +37,10 @@ router = APIRouter(
 
 @router.get("/", name="games")
 async def watch_games(
+    request: Request,
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
-    return await check_games(session=session)
+    return await get_games(request=request, session=session)
 
 
 @router.get("/find")
@@ -45,7 +48,7 @@ async def find_game(
     game=Query(description="Find Game"),
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
-    return await check_games_ratings(session=session)
+    return await get_game(game=game, session=session)
 
 
 @router.get("/to-watch/part")
@@ -65,14 +68,14 @@ async def watch_game_catalog(
     return await game_select_genre(genre=genre, session=session)
 
 
-@router.post("/add-favorites")
+@router.post("/add-like")
 async def add_game_to_favorites(
     request: Request,
     game: str,
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
 
-    return await create_favorite_game(game, request, session)
+    return await like_game(game=game, request=request, session=session)
 
 
 @router.delete("/delete/games-user-liked")
@@ -113,19 +116,19 @@ async def post_rating_for_game(
     )
 
 
-@router.get("/get/rating/all")
-async def post_rating(
+@router.get("/get/ratings")
+async def get_rating(
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
-    return await get_rating_for_games(session=session, is_one=False)
+    return await get_rating_games(session=session, is_one=False)
 
 
 @router.get("/get/rating")
-async def post_rating(
+async def get_rating(
     game: str = Query(description="Which game should I rate?"),
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
-    return await get_rating_for_games(session=session, is_one_game=game, is_one=True)
+    return await get_rating_games(session=session, is_one_game=game, is_one=True)
 
 
 @router.get("/hidden")
@@ -186,6 +189,11 @@ async def payment_create(
     await create_privilege_level(privilege=privilege, session=session, request=request)
 
 
+@router.get("/watch/genres")
+async def watch_genres(session: AsyncSession = Depends(db_helper.session_dependency)):
+    return await get_genres(session=session)
+
+
 @router.get("/watch/genre/rpg")
 async def watch_genre(
     session: AsyncSession = Depends(db_helper.session_dependency),
@@ -205,3 +213,11 @@ async def watch_genre(
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
     return await get_genre_strategy(session=session)
+
+
+@router.get("/account")
+async def watch_user(
+    request: Request,
+    session: AsyncSession = Depends(db_helper.session_dependency),
+):
+    return await my_account(session=session, request=request)

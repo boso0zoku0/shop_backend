@@ -34,7 +34,6 @@ async def advertising_offer_to_client(
         .where(
             and_(
                 Users.username == client,
-                Users.username != "bob",
                 WebsocketConnections.connected_at >= expires_time,
             )
         )
@@ -70,7 +69,11 @@ async def get_user_by_cookie(
         )
     if is_logout:
         return user
-    return {"username": user.username, "user_id": user.id}
+    return {
+        "username": user.username,
+        "user_id": user.id,
+        "is_super_user": user.is_superuser,
+    }
 
 
 async def get_current_user(

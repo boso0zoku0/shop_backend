@@ -28,4 +28,4 @@ class UserInfo(BaseModel):
     privilege: PrivilegeLevel | None
     cookie_privileged: datetime | None
     cookie_privileged_expires: datetime | None
-    game: str | None
+    game_id: str | None

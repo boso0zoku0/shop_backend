@@ -14,8 +14,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 async def get_info(
     request: Request, session: AsyncSession = Depends(db_helper.session_dependency)
 ):
-    user = await get_user_by_cookie(session=session, request=request, is_logout=False)
-    return await all_info_about_user(user_id=user["user_id"], session=session)
+    return await all_info_about_user(request, session=session)
 
 
 @router.get("/about/me", status_code=status.HTTP_200_OK)

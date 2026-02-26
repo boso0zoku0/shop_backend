@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import TIMESTAMP
 
 class GamesUserLiked(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
-    game: Mapped[str] = mapped_column(ForeignKey("games.name", ondelete="CASCADE"))
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"))
     user_id: Mapped[int] = mapped_column(
         ForeignKey(
             "users.id",

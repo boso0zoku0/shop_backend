@@ -10,9 +10,10 @@ from core.schemas.users import UserInfo
 
 
 async def all_info_about_user(
-    user_id: int,
+    request: Request,
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
+    user = await get_user_by_cookie(session=session, request=request)
 
     stmt = (
         select(
@@ -21,10 +22,10 @@ async def all_info_about_user(
             Users.privilege,
             Users.cookie_privileged,
             Users.cookie_privileged_expires,
-            GamesUserLiked.game,
+            GamesUserLiked.game_id,
         )
         .join(GamesUserLiked, Users.id == GamesUserLiked.user_id)
-        .where(Users.id == user_id)
+        .where(Users.id == user["user_id"])
     )
     res = await session.execute(stmt)
     data = res.mappings().first()
@@ -35,7 +36,7 @@ async def all_info_about_user(
         privilege=data["privilege"] or None,
         cookie_privileged=data["cookie_privileged"] or None,
         cookie_privileged_expires=data["cookie_privileged_expires"] or None,
-        game=data["game"] or None,
+        game_id=data["game_id"] or None,
     )
 
 
@@ -43,7 +44,7 @@ async def info_about_user(
     request: Request,
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
-    current_user = await get_user_by_cookie(session, request)
+    current_user = await get_user_by_cookie(session=session, request=request)
 
     # CTE с оконными функциями
     ranked_users = select(

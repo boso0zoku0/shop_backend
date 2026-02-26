@@ -4,11 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core import db_helper
 from core.frontend_db.crud import (
     check_users,
-    get_genres,
-    my_account,
     user_vote_ratings,
 )
-from core.crud import get_genre_rpg, get_genre_strategy, get_genre_action, check_games
+from core.crud import get_genre_rpg, get_genre_strategy, get_genre_action
 from core.models import GamesUserRatings
 from core.schemas import GamesBase
 
@@ -21,12 +19,6 @@ router = APIRouter(tags=["GamesFront"], prefix="/games")
 # ):
 #     return await get_rating_for_games2(session=session)
 #
-#
-@router.get("/watch")
-async def watch_games(
-    session: AsyncSession = Depends(db_helper.session_dependency),
-):
-    return await check_games(session=session)
 
 
 # @router.get("/watch/genres")
@@ -41,13 +33,6 @@ async def watch_users(
     session: AsyncSession = Depends(db_helper.session_dependency),
 ):
     return await check_users(session=session)
-
-
-@router.get("/account")
-async def watch_user(
-    session: AsyncSession = Depends(db_helper.session_dependency),
-):
-    return await my_account(session=session)
 
 
 @router.get("/check_rating")
