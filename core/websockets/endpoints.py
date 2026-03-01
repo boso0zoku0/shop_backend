@@ -54,18 +54,29 @@ async def operator_ws(
     try:
         while True:
             data: dict = await websocket.receive_json()
-            print("endpoint websocket")
-            print(data)
-            log.info(f"Оператор отправил: {data}")
-            await broker.publish(
-                message={
-                    "from": operator,
-                    "to": data["to"],
-                    "message": data["message"],
-                },
-                queue=queue_operators,
-                exchange=exchange,
-            )
+            if "file_url" in data:
+                await broker.publish(
+                    message={
+                        "from": data["from"],
+                        "to": data["to"],
+                        "message": data.get("message", ""),
+                        "mime_type": data["mime_type"],
+                        "file_url": data["file_url"],
+                    },
+                    queue=queue_operators,
+                    exchange=exchange,
+                )
+            else:
+                log.info(f"Оператор отправил: {data}")
+                await broker.publish(
+                    message={
+                        "from": operator,
+                        "to": data["to"],
+                        "message": data["message"],
+                    },
+                    queue=queue_operators,
+                    exchange=exchange,
+                )
 
     except WebSocketDisconnect:
         if operator in manager.operators:
@@ -119,8 +130,22 @@ async def clients_ws(
                     queue=queue_clients,
                     exchange=exchange,
                 )
-            elif not handler_bot:
-                log.info("Кликает по ответу бота")
+            # elif not handler_bot:
+            #     log.info("Кликает по ответу бота")
+
+            if "file_url" in data:
+
+                await broker.publish(
+                    message={
+                        "from": data["from"],
+                        "to": data["to"],
+                        "message": data.get("message", ""),
+                        "mime_type": data["mime_type"],
+                        "file_url": data["file_url"],
+                    },
+                    queue=queue_clients,
+                    exchange=exchange,
+                )
 
     except WebSocketDisconnect:
         await session.execute(

@@ -1,6 +1,7 @@
 import logging
 
 from click import pass_context
+from faststream.asgi import websocket
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocket, WebSocketDisconnect
@@ -187,6 +188,44 @@ class WebsocketManager:
                 "type": "advertising",
                 "to": client,
                 "message": message,
+            }
+        )
+
+    async def send_media_to_client(
+        self,
+        operator: str,
+        client: str,
+        file_url: str,
+        mime_type: str,
+        message: str = "",
+    ):
+        await self.clients[client].send_json(
+            {
+                "type": "media",
+                "from": operator,
+                "to": client,
+                "message": message,
+                "file_url": file_url,
+                "mime_type": mime_type,
+            }
+        )
+
+    async def send_media_to_operator(
+        self,
+        client: str,
+        operator: str,
+        file_url: str,
+        mime_type: str,
+        message: str = "",
+    ):
+        await self.operators[operator].send_json(
+            {
+                "type": "media",
+                "from": client,
+                "to": operator,
+                "message": message,
+                "file_url": file_url,
+                "mime_type": mime_type,
             }
         )
 

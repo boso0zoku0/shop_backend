@@ -14,23 +14,24 @@ class FileUploadResponse(BaseModel):
     file_url: str
     file_name: str
     file_size: int
-    message: str
+    mime_type: str  # 'image' или 'video'
 
 
 @router.post("/upload-file")
 async def upload_file(
     file: UploadFile = File(...),
-    from_: str = Form(..., alias="from"),
 ):
-
     try:
-        file_url = await save_uploaded_file_from_form(file, from_)
+        file_url = await save_uploaded_file_from_form(file)
+
+        # Определяем тип автоматически по content_type
+        content_type = file.content_type or "application/octet-stream"
 
         return FileUploadResponse(
             file_url=file_url,
             file_name=file.filename,
             file_size=file.size,
-            message="Файл успешно загружен",
+            mime_type=content_type,
         )
 
     except Exception as e:

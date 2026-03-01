@@ -22,17 +22,35 @@ async def handler_notifying_client(msg: dict):
 async def handler_from_client_to_operator(
     msg: dict | str | bytes,
 ):
-
-    await manager.send_to_operator(
-        client=msg["from"], operator=msg["to"], message=msg["message"]
-    )
+    if "file_url" in msg:
+        await manager.send_media_to_operator(
+            client=msg["from"],
+            operator=msg["to"],
+            message=msg["message"],
+            mime_type=msg["mime_type"],
+            file_url=msg["file_url"],
+        )
+    elif "message" in msg:
+        await manager.send_to_operator(
+            client=msg["from"],
+            operator=msg["to"],
+            message=msg["message"],
+        )
 
 
 @broker.subscriber(queue=queue_operators, exchange=exchange)
-async def handler_from_operator_to_client(message: dict):
-
-    await manager.send_to_client(
-        client=message["to"],
-        message=message["message"],
-        operator=message["from"],
-    )
+async def handler_from_operator_to_client(msg: dict):
+    if "file_url" in msg:
+        await manager.send_media_to_client(
+            operator=msg["from"],
+            client=msg["to"],
+            message=msg["message"],
+            mime_type=msg["mime_type"],
+            file_url=msg["file_url"],
+        )
+    elif "message" in msg:
+        await manager.send_to_client(
+            operator=msg["from"],
+            client=msg["to"],
+            message=msg["message"],
+        )
