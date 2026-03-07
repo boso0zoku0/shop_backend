@@ -52,45 +52,60 @@ class GameRating(enum.Enum):
 async def get_games(
     request: Request, session: AsyncSession = Depends(db_helper.session_dependency())
 ):
-    user = await get_user_by_cookie(session=session, request=request)
-    # client = await redis_manager.get_client()
-    # cached_games = await client.get("games:all")
-    # if cached_games:
-    #     return json.loads(cached_games)
-
-    stmt = select(Games)
-    result = await session.execute(stmt)
-    games = result.scalars().all()
-
-    # Получаем все рейтинги пользователя
-    stmt_ratings = select(GamesUserRatings).where(
-        GamesUserRatings.user_id == user["user_id"]
+    stmt_sub = (
+        select(
+            Games.id,
+            Games.name,
+            Games.genre,
+            Games.release_year,
+            Games.story,
+            Games.gameplay,
+            Games.graphics,
+            Games.game_development,
+            Games.gallery,
+            func.sum(GamesUserRatings.rating).label("total_ratings"),
+            func.count(GamesUserRatings.rating).label("rating_count"),
+        )
+        .join(GamesUserRatings, Games.id == GamesUserRatings.game_id)
+        .group_by(Games.id)  # ← group_by НА select!
+        .subquery()
     )
-    res = await session.execute(stmt_ratings)
-    ratings = res.scalars().all()
-
-    # Создаем словарь {game_id: rating}
-    ratings_dict = {rating.game_id: rating.rating for rating in ratings}
-
-    # Собираем результат
+    stmt = select(
+        stmt_sub.c.id,
+        stmt_sub.c.name,
+        stmt_sub.c.genre,
+        stmt_sub.c.release_year,
+        stmt_sub.c.story,
+        stmt_sub.c.gameplay,
+        stmt_sub.c.graphics,
+        stmt_sub.c.game_development,
+        stmt_sub.c.gallery,
+        (stmt_sub.c.total_ratings / stmt_sub.c.rating_count).label("average_rating"),
+        stmt_sub.c.rating_count,
+    ).order_by(desc(stmt_sub.c.total_ratings))
+    result = await session.execute(stmt)
+    data = result.all()
+    result = await session.execute(stmt)
     games_data = []
-    for game in games:
+    for row in result.all():
         games_data.append(
             {
-                "name": game.name,
-                "genre": game.genre,
-                "release_year": game.release_year,
-                "story": game.story,
-                "gameplay": game.gameplay,
-                "graphics": game.graphics,
-                "game_development": game.game_development,
-                "gallery": game.gallery,
-                "rating": ratings_dict.get(game.id, None),  # 0 если нет рейтинга
+                "id": row.id,
+                "name": row.name,
+                "genre": row.genre,
+                "release_year": row.release_year,
+                "story": row.story,
+                "gameplay": row.gameplay,
+                "graphics": row.graphics,
+                "game_development": row.game_development,
+                "gallery": row.gallery,
+                "average_rating": (
+                    float(row.average_rating) if row.average_rating else 0
+                ),
+                "rating_count": row.rating_count,
             }
         )
 
-    # games_json = json.dumps(games_data, default=str, ensure_ascii=False)
-    # await redis_manager.set("games:all", games_json, ex=3600)
     return games_data
 
 
@@ -346,7 +361,8 @@ async def add_rating_for_game(
         )
         await session.execute(stmt_game_rating)
         await session.commit()
-        return {f"You rated it {rating} for game {game}" "Thanks for your opinion"}
+        games = await algorithm_rating_games(session)
+        return games
 
     except IntegrityError as e:
         if "duplicate key" in str(e):
@@ -432,6 +448,37 @@ async def get_rating_games(
                 "average_rating": float(avg_rating) if avg_rating else 0.0,
                 "rating_count": rating_count,
             }
+
+
+async def algorithm_rating_games(
+    session: AsyncSession = Depends(db_helper.session_dependency),
+):
+    stmt_sub = (
+        select(
+            Games.name,
+            func.sum(GamesUserRatings.rating).label("total_ratings"),
+            func.count(GamesUserRatings.rating).label("rating_count"),
+        )
+        .join(GamesUserRatings, Games.id == GamesUserRatings.game_id)
+        .group_by(Games.name, Games.gallery)  # ← group_by НА select!
+        .subquery()
+    )
+    stmt = select(
+        stmt_sub.c.name,
+        (stmt_sub.c.total_ratings / stmt_sub.c.rating_count).label("average_rating"),
+        stmt_sub.c.rating_count,
+    ).order_by(desc(stmt_sub.c.total_ratings))
+    result = await session.execute(stmt)
+    data = result.all()
+
+    return [
+        {
+            "game": game,
+            "average_rating": float(average_rating) if average_rating else None,
+            "rating_count": rating_count,
+        }
+        for game, average_rating, rating_count in data
+    ]
 
 
 async def hidden_games(

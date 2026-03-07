@@ -62,10 +62,17 @@ class Users(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-
-    # ratings = relationship(
-    #     "GamesUserRatings",
-    #     back_populates="user",
-    #     cascade="all, delete-orphan",
-    #     passive_deletes=True,
-    # )
+    ws_message_from_user = relationship(
+        "WebsocketMessageHistory",
+        foreign_keys="WebsocketMessageHistory.from_user_id",
+        back_populates="from_user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    ws_message_to_user = relationship(
+        "WebsocketMessageHistory",
+        foreign_keys="WebsocketMessageHistory.to_user_id",
+        back_populates="to_user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )

@@ -59,7 +59,7 @@ async def watch_game_catalog(
 
 
 @router.get("/select-by-genre", name="get_genre")
-async def watch_game_catalog(
+async def watch_catalog(
     genre: Literal["ACTION", "ADVENTURE", "RPG", "STRATEGY", "SIMULATION"] = Query(
         description="Watch genre"
     ),

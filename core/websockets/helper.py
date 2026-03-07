@@ -1,15 +1,22 @@
+import asyncio
 import logging
+from collections import defaultdict
+from datetime import datetime, timedelta
 
-from click import pass_context
-from faststream.asgi import websocket
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
+from core import db_helper
 from core.crud import get_list_games, get_list_genres
 from core.faststream.broker import broker, exchange, queue_notify_client
 from core.models import PendingMessages
-from core.websockets.crud import insert_websocket_db
+from core.models.ws_history_message import WebsocketMessageHistory, TypeMessage
+from core.websockets.crud import (
+    insert_websocket_db,
+    insert_message_history,
+    get_user_by_name,
+)
 
 log = logging.getLogger(__name__)
 
@@ -18,7 +25,132 @@ class WebsocketManager:
     def __init__(self):
         self.operators: dict[str, WebSocket] = {}
         self.clients: dict[str, WebSocket] = {}
-        # self.active_clients_operators: dict[str, str] = {}  # client - operator
+        self.user_ids: dict[str, int] = {}
+        self.operator_clients = defaultdict(set)  # op-cl
+        self.timeout_busy_operator = defaultdict(lambda: defaultdict(str))
+
+    async def send_to_operator(
+        self,
+        session: AsyncSession,
+        client: str,
+        operator: str,
+        message: str,
+    ):
+        if operator == "":
+            from_user_id = await get_user_by_name(client, session)
+            await insert_message_history(
+                session=session,
+                from_user_id=from_user_id,
+                message=message,
+                type_message=TypeMessage.client.value,
+            )
+            pass
+        else:
+            await self.operators[operator].send_json(
+                {
+                    "type": "client_message",
+                    "from": client,
+                    "to": operator,
+                    "message": message,
+                }
+            )
+            from_user_id = await get_user_by_name(client, session)
+            to_user_id = await get_user_by_name(operator, session)
+            await insert_message_history(
+                session=session,
+                from_user_id=from_user_id,
+                to_user_id=to_user_id,
+                message=message,
+                type_message=TypeMessage.client.value,
+            )
+            log.info(f"Сообщение отправлено оператору: {operator}")
+
+    async def send_to_client(
+        self,
+        session: AsyncSession,
+        client: str,
+        operator: str,
+        message: str,
+    ):
+
+        try:
+            self.timeout_busy_operator[operator][client] = datetime.now().isoformat()
+            await self.busy_operator_clear_timeout(operator)
+            await self.clients[client].send_json(
+                {
+                    "type": "operator_message",
+                    "from": operator,
+                    "to": client,
+                    "message": message,
+                }
+            )
+            from_user_id = await get_user_by_name(operator, session)
+            to_user_id = await get_user_by_name(client, session)
+            await insert_message_history(
+                session=session,
+                from_user_id=from_user_id,
+                to_user_id=to_user_id,
+                message=message,
+                type_message=TypeMessage.operator.value,
+            )
+
+            log.info(f"✓ Сообщение отправлено клиенту {client}: {message}")
+        except Exception as e:
+            log.info(f"✗ Ошибка отправки {operator} -> {client}")
+
+    async def disconnect_client(self, client: str):
+        """Полное отключение клиента"""
+        try:
+            # Закрываем и удаляем из памяти
+            if client in self.clients:
+                self.clients.pop(client)
+                log.info(f"✓ Клиент {client} удален из self.clients")
+
+            # Удаляем из структур
+            for operator, clients_dict in self.timeout_busy_operator.items():
+                if client in clients_dict:
+                    clients_dict.pop(client)
+                    log.info(f"  → Удален из оператора {operator}")
+
+            # Дополнительная очистка
+            if hasattr(self, "client_operators"):
+                self.client_operators.pop(client, None)
+
+        except Exception as e:
+            log.error(f"✗ Ошибка при отключении клиента {client}: {e}")
+
+    async def busy_operator_clear_timeout(self, operator: str):
+        """
+        Очистка клиента, если оператор давно ему не отвечал
+        """
+        if operator in self.timeout_busy_operator[operator]:
+            for client, timeout in self.timeout_busy_operator[operator].values():
+                if timeout + timedelta(minutes=5) < datetime.now():
+                    self.timeout_busy_operator[operator].pop(client)
+
+    async def notify_connect_to_operators(
+        self,
+        client: str,
+    ):
+        """
+        Оповещение не занятым операторам о новом клиенте
+        """
+
+        busy_operators = set(self.timeout_busy_operator.keys())
+        for op in self.operators.keys():
+            # для отладки not убрал, т.к отработает если только время пройдет
+            if op in busy_operators:
+                log.info(
+                    f"Оповещение оператора о новом клиенте {self.timeout_busy_operator[op][client]}"
+                )
+
+                await self.operators[op].send_json(
+                    {
+                        "type": "notify_connect",
+                        "from": client,
+                        "to": op,
+                    }
+                )
 
     async def connect_client(
         self,
@@ -32,6 +164,7 @@ class WebsocketManager:
         is_advertising: bool = False,
     ):
         self.clients[client] = websocket
+        self.user_ids[client] = user_id
         await self.init_communication_with_client(client)
 
         if not is_advertising:
@@ -63,14 +196,9 @@ class WebsocketManager:
             message = res.scalar_one_or_none()
             if not message:
                 return
-            await broker.publish(
-                message={
-                    "type": "advertising",
-                    "client": client,
-                    "message": message.message,
-                },
-                queue=queue_notify_client,
-                exchange=exchange,
+            await self.advertising_to_client(
+                client=client,
+                message=message.message,
             )
             await session.delete(message)
 
@@ -84,7 +212,13 @@ class WebsocketManager:
         is_active: bool,
         session: AsyncSession,
     ):
+        self.timeout_busy_operator[operator] = defaultdict(str)
+        log.info(
+            f"Оператор добавлен в список для помощи клиентам {dict(self.timeout_busy_operator)}"
+        )
         self.operators[operator] = websocket
+        self.user_ids[operator] = user_id
+        await self.get_clients()
         await insert_websocket_db(
             session=session,
             username=operator,
@@ -94,10 +228,7 @@ class WebsocketManager:
             is_active=is_active,
             connection_type="operator",
         )
-        # await self.clients[client].send_json(
-        #     {"type": "notify", "message": f"Operator {operator} joined the chat"}
-        # )
-        # log.info(f"✓ Оператор {operator} подключен")
+        log.info(f"✓ Оператор {operator} подключен")
 
     async def get_clients(self):
         clients: list = []
@@ -105,7 +236,9 @@ class WebsocketManager:
             clients.append(client)
         return clients
 
-    async def sender_bot(self, client: str, message: str, session: AsyncSession):
+    async def sender_bot(
+        self, client: str, message: str, session: AsyncSession, websocket: WebSocket
+    ):
 
         triggers_operator = {"help me", "call the operator"}
         triggers_bot = {
@@ -122,6 +255,7 @@ class WebsocketManager:
                     "message": "The operator is already rushing to you",
                 }
             )
+            await self.notify_connect_to_operators(client)
             return True
         # Проверка на остальные команды в боте
         for question, response in triggers_bot.items():
@@ -153,35 +287,6 @@ class WebsocketManager:
             }
         )
 
-    async def send_to_operator(self, client: str, operator: str, message: str):
-        try:
-            await self.operators[operator].send_json(
-                {
-                    "type": "client_message",
-                    "from": client,
-                    "to": operator,
-                    "message": message,
-                }
-            )
-            log.info(f"Сообщение отправлено оператору: {operator}")
-        except Exception as e:
-            log.info(f"✗ Ошибка отправки {client} -> ...")
-
-    async def send_to_client(self, client: str, operator: str, message: str):
-
-        try:
-            await self.clients[client].send_json(
-                {
-                    "type": "operator_message",
-                    "from": operator,
-                    "to": client,
-                    "message": message,
-                }
-            )
-            log.info(f"✓ Сообщение отправлено клиенту {client}: {message}")
-        except Exception as e:
-            log.info(f"✗ Ошибка отправки {operator} -> {client}")
-
     async def advertising_to_client(self, client: str, message: str):
         await self.clients.get(client).send_json(
             {
@@ -193,41 +298,88 @@ class WebsocketManager:
 
     async def send_media_to_client(
         self,
+        session: AsyncSession,
         operator: str,
         client: str,
         file_url: str,
         mime_type: str,
         message: str = "",
     ):
-        await self.clients[client].send_json(
-            {
-                "type": "media",
-                "from": operator,
-                "to": client,
-                "message": message,
-                "file_url": file_url,
-                "mime_type": mime_type,
-            }
-        )
+        if client == "":
+            from_user_id = await get_user_by_name(operator, session)
+            await insert_message_history(
+                session=session,
+                from_user_id=from_user_id,
+                message=message,
+                type_message=TypeMessage.media.value,
+                file_url=file_url,
+                mime_type=mime_type,
+            )
+        else:
+            await self.clients[client].send_json(
+                {
+                    "type": "media",
+                    "from": operator,
+                    "to": client,
+                    "message": message,
+                    "file_url": file_url,
+                    "mime_type": mime_type,
+                }
+            )
+            from_user_id = await get_user_by_name(operator, session)
+            to_user_id = await get_user_by_name(client, session)
+            await insert_message_history(
+                session=session,
+                from_user_id=from_user_id,
+                to_user_id=to_user_id,
+                message=message,
+                type_message=TypeMessage.media.value,
+                file_url=file_url,
+                mime_type=mime_type,
+            )
 
     async def send_media_to_operator(
         self,
+        session: AsyncSession,
         client: str,
         operator: str,
         file_url: str,
         mime_type: str,
         message: str = "",
     ):
-        await self.operators[operator].send_json(
-            {
-                "type": "media",
-                "from": client,
-                "to": operator,
-                "message": message,
-                "file_url": file_url,
-                "mime_type": mime_type,
-            }
-        )
+
+        if operator == "":
+            from_user_id = await get_user_by_name(client, session)
+            await insert_message_history(
+                session=session,
+                from_user_id=from_user_id,
+                message=message,
+                type_message=TypeMessage.media.value,
+                file_url=file_url,
+                mime_type=mime_type,
+            )
+        else:
+            await self.operators[operator].send_json(
+                {
+                    "type": "media",
+                    "from": client,
+                    "to": operator,
+                    "message": message,
+                    "file_url": file_url,
+                    "mime_type": mime_type,
+                }
+            )
+            from_user_id = await get_user_by_name(client, session)
+            to_user_id = await get_user_by_name(operator, session)
+            await insert_message_history(
+                session=session,
+                from_user_id=from_user_id,
+                to_user_id=to_user_id,
+                message=message,
+                type_message=TypeMessage.media.value,
+                file_url=file_url,
+                mime_type=mime_type,
+            )
 
 
 manager = WebsocketManager()

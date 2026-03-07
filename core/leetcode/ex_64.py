@@ -21,6 +21,7 @@
 from collections import defaultdict
 from itertools import count
 
+import datetime
 
 # def partition_list(head: list, x: int):
 #     before = []
@@ -94,17 +95,40 @@ from itertools import count
 #
 
 
-def max_profit(prices: list[int]):
-    s = 0
-    for i, v in enumerate(prices):
-        if i >= 1:
-            print(f"f {prices[i] < prices[i - 1]}")
-            if prices[i] < prices[i - 1]:
+# def max_profit(prices: list[int]):
+#     s = 0
+#     for i, v in enumerate(prices):
+#         if i >= 1:
+#             print(f"f {prices[i] < prices[i - 1]}")
+#             if prices[i] < prices[i - 1]:
+#
+#                 return 0
+#             else:
+#                 s += prices[i] - prices[i - 1]
+#     return s
+#
+#
+# print(max_profit([3, 33, 333]))
+from datetime import datetime, timedelta
 
-                return 0
-            else:
-                s += prices[i] - prices[i - 1]
-    return s
+#
+d = {
+    "op1": {"client_1": "time1", "client_2": "time2"},
+    "op2": {"client_3": "time3", "client_4": "time4"},
+}
 
+for k, v in d.items():
+    if "client_1" in v:
+        print(v["client_1"])
 
-print(max_profit([3, 33, 333]))
+# d = defaultdict(lambda: defaultdict(str))
+# d["op1"]["client_1"] = datetime.now().isoformat()
+# d["op1"]["client_2"] = datetime.now().isoformat()
+# d["op2"]["client_2"] = datetime.now().isoformat()
+# print(d.__reversed__().__next__())
+# print(d["client_2"])
+#
+# from datetime import datetime, timedelta
+#
+# t = datetime = datetime.now() + timedelta(minutes=1)
+# d = datetime.now()

@@ -10,7 +10,7 @@ MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 
 
 async def save_uploaded_file(
-    file_data: bytes, sender: str, file_info: dict = None
+    file_data: bytes, file_info: dict = None
 ) -> str:
     """
     Сохраняет загруженный файл и возвращает URL для доступа к нему

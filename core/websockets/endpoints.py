@@ -4,6 +4,7 @@ from fastapi import (
     WebSocketDisconnect,
     Depends,
     WebSocketException,
+    Request,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update
@@ -12,7 +13,11 @@ from core import db_helper
 from core.models import WebsocketsConnections
 from core.websockets import manager
 import logging
-from core.websockets.crud import get_user_from_cookies
+from core.websockets.crud import (
+    get_user_from_cookies,
+    insert_message_history,
+    get_user_dialog,
+)
 from faststream.rabbit import RabbitExchange, RabbitQueue
 from core.faststream.broker import (
     broker,
@@ -92,6 +97,14 @@ async def operator_ws(
         log.info(f"Ошибка: {e}")
 
 
+@router.get("/get-user-dialog")
+async def show_user_dialog(
+    request: Request,
+    session: AsyncSession = Depends(db_helper.session_dependency),
+):
+    return await get_user_dialog(session=session, request=request)
+
+
 @router.websocket("/clients/{client}")
 async def clients_ws(
     websocket: WebSocket,
@@ -117,7 +130,10 @@ async def clients_ws(
             data = await websocket.receive_json()
 
             handler_bot = await manager.sender_bot(
-                client=client, message=data["message"], session=session
+                client=client,
+                message=data["message"],
+                session=session,
+                websocket=websocket,
             )
             if not handler_bot and "to" in data:
                 log.info(f"data: {data['from']} ; {data['message']}")
@@ -134,7 +150,6 @@ async def clients_ws(
             #     log.info("Кликает по ответу бота")
 
             if "file_url" in data:
-
                 await broker.publish(
                     message={
                         "from": data["from"],
@@ -154,4 +169,11 @@ async def clients_ws(
             .values(is_active=False, disconnected_at=datetime.now(tz=timezone.utc))
         )
         await session.commit()
-        del manager.clients[client]
+        """Через брокер disconnect_client не вызывается почему то. напрямую всё ок"""
+        await manager.disconnect_client(client=client)
+        # await broker.publish(
+        #     message={
+        #         "from": client,
+        #         "type": "disconnect_client",
+        #     }
+        # )
