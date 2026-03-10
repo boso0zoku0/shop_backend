@@ -33,9 +33,7 @@ router = APIRouter()
 
 @router.get("/get-clients")
 async def clients():
-    if manager.clients:
-        return list(manager.clients.keys())
-    return []
+    return await manager.get_clients()
 
 
 @router.websocket("/operator/{operator}")
@@ -59,9 +57,17 @@ async def operator_ws(
     try:
         while True:
             data: dict = await websocket.receive_json()
-            if "file_url" in data:
+            log.info(f"🔍 ПОЛУЧЕНО: {data}")
+
+            msg_type = data.get("type")
+            if msg_type == "notify_connect_to_client":
+                await manager.notify_connect_to_client(
+                    client=data["to"], operator=data["from"]
+                )
+            elif "file_url" in data or msg_type == "media":
                 await broker.publish(
                     message={
+                        "type": "media",
                         "from": data["from"],
                         "to": data["to"],
                         "message": data.get("message", ""),
@@ -71,17 +77,25 @@ async def operator_ws(
                     queue=queue_operators,
                     exchange=exchange,
                 )
-            else:
-                log.info(f"Оператор отправил: {data}")
+            elif msg_type == "operator_message" or (
+                msg_type is None and "message" in data
+            ):
+                log.info(
+                    f"💬 Сообщение от {data['from']} для {data['to']}: {data.get('message')}"
+                )
                 await broker.publish(
                     message={
-                        "from": operator,
+                        "type": "operator_message",
+                        "from": data["from"],
                         "to": data["to"],
-                        "message": data["message"],
+                        "message": data.get("message", ""),
                     },
                     queue=queue_operators,
                     exchange=exchange,
                 )
+
+            else:
+                log.warning(f"⚠️ Неизвестный тип сообщения: {data}")
 
     except WebSocketDisconnect:
         if operator in manager.operators:

@@ -18,10 +18,7 @@
 #
 #
 # print(minPathSum(input))
-from collections import defaultdict
-from itertools import count
 
-import datetime
 
 # def partition_list(head: list, x: int):
 #     before = []
@@ -112,14 +109,14 @@ import datetime
 from datetime import datetime, timedelta
 
 #
-d = {
-    "op1": {"client_1": "time1", "client_2": "time2"},
-    "op2": {"client_3": "time3", "client_4": "time4"},
-}
-
-for k, v in d.items():
-    if "client_1" in v:
-        print(v["client_1"])
+# d = {
+#     "op1": {"client_1": "time1", "client_2": "time2"},
+#     "op2": {"client_3": "time3", "client_4": "time4"},
+# }
+#
+# for k, v in d.items():
+#     if "client_1" in v:
+#         print(v["client_1"])
 
 # d = defaultdict(lambda: defaultdict(str))
 # d["op1"]["client_1"] = datetime.now().isoformat()
@@ -132,3 +129,18 @@ for k, v in d.items():
 #
 # t = datetime = datetime.now() + timedelta(minutes=1)
 # d = datetime.now()
+
+
+def maxSubArray(nums: list[int]):
+    current_sum = nums[0]
+    max_sum = nums[0]
+
+    for i in range(1, len(nums)):
+        # Либо продолжаем текущий подмассив, либо начинаем новый с текущего элемента
+        current_sum = max(nums[i], current_sum + nums[i])
+        # Обновляем максимальную сумму
+        max_sum = max(max_sum, current_sum)
+        return max_sum
+
+
+print(maxSubArray(nums=[-2, 1, -3, 4, -1, 2, 1, -5, 4]))

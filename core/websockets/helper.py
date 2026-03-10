@@ -25,9 +25,10 @@ class WebsocketManager:
     def __init__(self):
         self.operators: dict[str, WebSocket] = {}
         self.clients: dict[str, WebSocket] = {}
-        self.user_ids: dict[str, int] = {}
-        self.operator_clients = defaultdict(set)  # op-cl
-        self.timeout_busy_operator = defaultdict(lambda: defaultdict(str))
+        self.clients_asks_help: dict = {}
+        self.timeout_busy_operator: defaultdict[str, dict[str, datetime]] = defaultdict(
+            dict
+        )
 
     async def send_to_operator(
         self,
@@ -74,8 +75,9 @@ class WebsocketManager:
     ):
 
         try:
-            self.timeout_busy_operator[operator][client] = datetime.now().isoformat()
-            await self.busy_operator_clear_timeout(operator)
+            self.timeout_busy_operator[operator][client] = datetime.now()
+            print(f"BUSY: {self.timeout_busy_operator}")
+            await self.busy_operator_clear(operator)
             await self.clients[client].send_json(
                 {
                     "type": "operator_message",
@@ -99,50 +101,52 @@ class WebsocketManager:
             log.info(f"✗ Ошибка отправки {operator} -> {client}")
 
     async def disconnect_client(self, client: str):
-        """Полное отключение клиента"""
         try:
-            # Закрываем и удаляем из памяти
+            await self.notify_disconnect_to_operators(client)
             if client in self.clients:
                 self.clients.pop(client)
+                del self.clients_asks_help[client]
                 log.info(f"✓ Клиент {client} удален из self.clients")
-
-            # Удаляем из структур
             for operator, clients_dict in self.timeout_busy_operator.items():
                 if client in clients_dict:
                     clients_dict.pop(client)
                     log.info(f"  → Удален из оператора {operator}")
-
-            # Дополнительная очистка
             if hasattr(self, "client_operators"):
                 self.client_operators.pop(client, None)
-
         except Exception as e:
             log.error(f"✗ Ошибка при отключении клиента {client}: {e}")
 
-    async def busy_operator_clear_timeout(self, operator: str):
+    async def notify_disconnect_to_operators(self, client: str):
+        busy_operators = set(self.timeout_busy_operator.keys())
+        for op in self.operators.keys():
+            # для отладки not убрал, т.к отработает если только время пройдет
+            if op in busy_operators:
+                log.info(f"Оповещение оператора об отключении клиента")
+
+                await self.operators[op].send_json(
+                    {
+                        "type": "notify_disconnect",
+                        "from": client,
+                    }
+                )
+
+    async def busy_operator_clear(self, operator: str):
         """
-        Очистка клиента, если оператор давно ему не отвечал
+        Убрать клиента из связки оператор-клиенты, если оператор давно ему не отвечал
         """
-        if operator in self.timeout_busy_operator[operator]:
-            for client, timeout in self.timeout_busy_operator[operator].values():
-                if timeout + timedelta(minutes=5) < datetime.now():
+        if operator in self.timeout_busy_operator:
+            for client, timeout in self.timeout_busy_operator[operator].items():
+                if timeout + timedelta(minutes=1) < datetime.now():
                     self.timeout_busy_operator[operator].pop(client)
 
     async def notify_connect_to_operators(
         self,
         client: str,
     ):
-        """
-        Оповещение не занятым операторам о новом клиенте
-        """
-
         busy_operators = set(self.timeout_busy_operator.keys())
         for op in self.operators.keys():
             # для отладки not убрал, т.к отработает если только время пройдет
             if op in busy_operators:
-                log.info(
-                    f"Оповещение оператора о новом клиенте {self.timeout_busy_operator[op][client]}"
-                )
 
                 await self.operators[op].send_json(
                     {
@@ -151,6 +155,16 @@ class WebsocketManager:
                         "to": op,
                     }
                 )
+
+    async def notify_connect_to_client(self, client: str, operator: str):
+        await self.clients[client].send_json(
+            {
+                "type": "notify_connect_to_client",
+                "from": operator,
+                "to": client,
+                "message": f"Operator {operator} has joined chat",
+            }
+        )
 
     async def connect_client(
         self,
@@ -164,7 +178,6 @@ class WebsocketManager:
         is_advertising: bool = False,
     ):
         self.clients[client] = websocket
-        self.user_ids[client] = user_id
         await self.init_communication_with_client(client)
 
         if not is_advertising:
@@ -212,13 +225,13 @@ class WebsocketManager:
         is_active: bool,
         session: AsyncSession,
     ):
-        self.timeout_busy_operator[operator] = defaultdict(str)
+
+        self.timeout_busy_operator[operator] = {}
+        # Если по ключу оператор пусто - значит можно считать оператора НЕ занятым
         log.info(
             f"Оператор добавлен в список для помощи клиентам {dict(self.timeout_busy_operator)}"
         )
         self.operators[operator] = websocket
-        self.user_ids[operator] = user_id
-        await self.get_clients()
         await insert_websocket_db(
             session=session,
             username=operator,
@@ -231,10 +244,7 @@ class WebsocketManager:
         log.info(f"✓ Оператор {operator} подключен")
 
     async def get_clients(self):
-        clients: list = []
-        for client in self.clients.keys():
-            clients.append(client)
-        return clients
+        return list(self.clients_asks_help.keys())
 
     async def sender_bot(
         self, client: str, message: str, session: AsyncSession, websocket: WebSocket
@@ -255,6 +265,7 @@ class WebsocketManager:
                     "message": "The operator is already rushing to you",
                 }
             )
+            self.clients_asks_help[client] = message
             await self.notify_connect_to_operators(client)
             return True
         # Проверка на остальные команды в боте

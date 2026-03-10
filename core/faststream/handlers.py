@@ -38,8 +38,8 @@ async def handler_from_client_to_operator(
                 mime_type=msg["mime_type"],
                 file_url=msg["file_url"],
             )
-        if msg["type"] == "disconnect_client":
-            await manager.disconnect_client(client=msg["from"])
+        # if msg["type"] == "disconnect_client":  напрямую из endpoint вызываю, поэтому убрал
+        #         #     await manapger.disconnect_client(client=msg["from"])
         else:
             await manager.send_to_operator(
                 session=session,  # ← 1. session
@@ -61,6 +61,10 @@ async def handler_from_operator_to_client(msg: dict):
                 mime_type=msg["mime_type"],
                 file_url=msg["file_url"],
             )
+        # if "notify_connect" in msg:
+        #     await manager.notify_connect_to_client(
+        #         operator=msg["from"], client=msg["to"]
+        #     )
         elif "message" in msg:
             await manager.send_to_client(
                 session=session,

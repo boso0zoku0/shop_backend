@@ -3,7 +3,7 @@ import datetime as dt
 import uuid
 from typing import Optional
 
-from sqlalchemy import func, ForeignKey, String, Integer, DateTime, Enum, UUID
+from sqlalchemy import func, ForeignKey, String, Integer, DateTime, Enum, UUID, false
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB
@@ -45,6 +45,7 @@ class WebsocketMessageHistory(Base):
     type_message: Mapped[TypeMessage] = mapped_column(
         Enum(TypeMessage, name="type_message"), nullable=False
     )
+    is_resolved: Mapped[bool] = mapped_column(nullable=True, server_default=false())
     created_at: Mapped[TIMESTAMP] = mapped_column(
         TIMESTAMP(timezone=True),
         nullable=False,
